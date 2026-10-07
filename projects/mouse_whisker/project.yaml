@@ -1,0 +1,19 @@
+# Mouse whisker / object-recognition session (design doc §26–27).
+# Placeholder — the config schema isn't fixed yet; fill in once a DANDI
+# session is chosen.
+
+sources:
+  session:
+    type: nwb            # resolved via the syncviz.sources entry point
+    path: data/session.nwb
+
+synchronization:
+  neural_video:
+    sources: [neural, video]
+    method:
+      type: synchronization_pulses
+      reference: neural.sync_pulses
+      target: video.sync_pulses
+
+groupings:
+  - trial

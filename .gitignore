@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Scientific data — never commit (download via DANDI instead)
+data/
+*.nwb
+*.h5
+*.hdf5
+*.mp4
+*.avi
+*.mov
+
+# Editors / OS
+.vscode/
+.idea/
+.ipynb_checkpoints/
+Thumbs.db
+.DS_Store
