@@ -8,7 +8,7 @@ from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL
 from syncviz_app.context import AppContext
-from syncviz_app.layout import layout_path, load_store
+from syncviz_app.layout import DEFAULT_NAME, layouts_dir, load_layout
 from syncviz_app.main_window import MainWindow
 from syncviz_app.project import load_project
 from syncviz_app.view_factory import create_view, fit_timeline, register_view
@@ -18,12 +18,17 @@ from syncviz_app.views.base import View
 DEFAULT_STEP_INTERVAL_MS = 10.0
 
 
-def build_window(project_path: str | Path, debug: bool = False, use_layout: bool = True) -> MainWindow:
-    """`use_layout` applies (and later saves) what the user changed since the project file was written."""
+def build_window(project_path: str | Path, debug: bool = False, use_layout: bool = True,
+                 layout_name: str | None = None) -> MainWindow:
+    """Open a project. `layout_name` picks the layout (else the project file's `layout:`, else "Default");
+    `use_layout=False` ignores layouts altogether."""
     project = load_project(project_path)
-    layout_file = layout_path(project_path) if use_layout else None
-    store = load_store(layout_file) if layout_file else None
-    layout = store.active if store else None
+    directory = layouts_dir(project_path, project.config.get("layouts_dir")) if use_layout else None
+    chosen = layout_name or project.config.get("layout") or DEFAULT_NAME
+    layout = load_layout(directory, chosen) if directory else None
+    layout_notes: list[str] = []
+    if directory and layout is None and (layout_name or project.config.get("layout")):
+        layout_notes = [f"layout {chosen!r} was not found in {directory}; showing the project's defaults"]
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
@@ -69,4 +74,5 @@ def build_window(project_path: str | Path, debug: bool = False, use_layout: bool
     if "view" in step_spec and step_spec["view"] not in bases:
         context.notes.append(f"step view {step_spec['view']!r} has no time grid; using {context.stepper.reference!r}")
 
-    return MainWindow(project, context, views, debug=debug, layouts=store, layout_file=layout_file)
+    context.notes.extend(layout_notes)
+    return MainWindow(project, context, views, debug=debug, layout=layout, layout_dir=directory, layout_name=chosen)

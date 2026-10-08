@@ -528,143 +528,144 @@ def test_the_views_menu_is_gone_because_the_sidebar_replaces_it(window):
     assert "Views" not in [a.text().replace("&", "") for a in window.menuBar().actions()]
 
 
-# -- the layout is kept beside the project and applied next time ---------------------------
-def _reopen(window, qapp):
-    """Close the window (which saves its layout) and open the same project again."""
+# -- layouts: named presets, one file each in the project's own folder, saved only on request ----
+def _reopen(window, qapp, **kwargs):
+    """Close the window and open the same project again."""
     path = window.project.path
     window.close()
     qapp.processEvents()
-    again = build_window(path)
+    again = build_window(path, **kwargs)
     again.show()
     return again
 
 
-def test_added_views_come_back_the_next_time_the_project_opens(window, qapp):
+def _a_time_series_spec(window):
     from syncviz_app.add_view_dialog import collect_candidates
 
-    spec = next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
-    added = window.add_view(spec)
-    again = _reopen(window, qapp)
+    return next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
+
+
+def test_nothing_is_saved_unless_the_user_saves(window, qapp):
+    window.add_view(_a_time_series_spec(window))
+    window.remove_view(window.views[0])
+    again = _reopen(window, qapp)               # closing must not have saved anything
     try:
-        assert added.title in [v.title for v in again.views]
-        assert again.views_panel.list.count() == len(again.views)
+        assert len(again.views) == 3 and not again.layout_dir.exists()
     finally:
         again.close()
 
 
-def test_a_removed_project_view_stays_removed_and_can_be_brought_back_by_resetting(window, qapp):
-    video = next(v for v in window.views if v.type_name == "video")
-    title = video.title
-    window.remove_view(video)
-    again = _reopen(window, qapp)
-    try:
-        assert title not in [v.title for v in again.views]
-        again.reset_layout()
-    finally:
-        again.close()
-    third = build_window(window.project.path)
-    try:
-        assert title in [v.title for v in third.views]
-    finally:
-        third.close()
-
-
-def test_hidden_panels_stay_hidden_after_reopening(window, qapp):
-    qapp.processEvents()
-    window.docks[1].close()
+def test_saving_keeps_added_and_removed_views_and_hidden_panels(window, qapp):
+    added = window.add_view(_a_time_series_spec(window))
+    removed = next(v for v in window.views if v.type_name == "video").title
+    window.remove_view(next(v for v in window.views if v.type_name == "video"))
+    window.docks[0].close()
     _pump(qapp, seconds=0.1)
+    window.views_panel.save_button.click()
+    assert "Saved layout" in window.statusBar().currentMessage()
     again = _reopen(window, qapp)
     try:
         _pump(qapp, seconds=0.1)
-        assert not again.docks[1].isVisible() and again.docks[0].isVisible()
-        assert again.views_panel.list.item(1).checkState() == Qt.CheckState.Unchecked
+        titles = [v.title for v in again.views]
+        assert added.title in titles and removed not in titles
+        assert not again.docks[0].isVisible()
+        assert again.views_panel.list.item(0).checkState() == Qt.CheckState.Unchecked
     finally:
         again.close()
 
 
-def test_a_corrupt_layout_file_is_ignored(window, qapp):
-    from syncviz_app.layout import layout_path
+def test_each_layout_is_its_own_file_in_the_projects_own_folder(window):
+    window.save_layout_as("Overview")
+    window.save_layout_as("Whisker analysis")
+    folder = window.layout_dir
+    assert folder.parent == window.project.path.parent
+    assert sorted(p.name for p in folder.glob("*.json")) == ["Overview.json", "Whisker analysis.json"]
+    assert window.saved_layout_names() == ["Overview", "Whisker analysis"]
 
+
+def test_two_projects_never_share_layout_files(tmp_path):
+    from syncviz_app.layout import layouts_dir
+
+    assert layouts_dir(tmp_path / "a" / "project.yaml") != layouts_dir(tmp_path / "b" / "project.yaml")
+    assert layouts_dir(tmp_path / "a" / "project.yaml", "mine") == tmp_path / "a" / "mine"
+
+
+def test_switching_layouts_changes_the_views_and_drops_unsaved_changes(window):
+    full = len(window.views)
+    window.save_layout_as("Full")                          # saved with every view
+    window.remove_view(next(v for v in window.views if v.type_name == "video"))
+    window.save_layout_as("Overview")                      # saved without the video
+    assert window.layout_name == "Overview" and len(window.views) == full - 1
+    assert window.switch_layout("Full") and len(window.views) == full
+    window.add_view(_a_time_series_spec(window))           # not saved...
+    assert len(window.views) == full + 1
+    window.switch_layout("Overview")
+    window.switch_layout("Full")
+    assert len(window.views) == full                       # ...so it is gone
+
+
+def test_a_layout_is_chosen_by_the_command_line_then_the_project_file_then_default(window, qapp):
+    window.save_layout_as("Overview")
+    window.remove_view(window.views[0])
+    window.save_layout_clicked()
     path = window.project.path
     window.close()
-    layout_path(path).write_text("{not json", encoding="utf-8")
-    again = build_window(path)
+    chosen = build_window(path, layout_name="Overview")
+    try:
+        assert chosen.layout_name == "Overview" and len(chosen.views) == 2
+    finally:
+        chosen.close()
+    plain = build_window(path)                              # no name: Default, which was never saved
+    try:
+        assert plain.layout_name == "Default" and len(plain.views) == 3
+    finally:
+        plain.close()
+    missing = build_window(path, layout_name="Nope")
+    try:
+        assert len(missing.views) == 3 and any("'Nope'" in n for n in missing.context.notes)
+    finally:
+        missing.close()
+    path.write_text(path.read_text(encoding="utf-8") + "\nlayout: Overview\n", encoding="utf-8")
+    from_project = build_window(path)
+    try:
+        assert from_project.layout_name == "Overview" and len(from_project.views) == 2
+    finally:
+        from_project.close()
+
+
+def test_deleting_a_layout_removes_its_file_only(window):
+    window.save_layout_as("A")
+    window.save_layout_as("B")
+    assert window.delete_layout("A")
+    assert window.saved_layout_names() == ["B"]
+    assert not window.delete_layout("A")
+
+
+def test_a_corrupt_layout_file_is_ignored(window, qapp):
+    window.save_layout_as("Broken")
+    (window.layout_dir / "Broken.json").write_text("{not json", encoding="utf-8")
+    assert window.saved_layout_names() == []
+    again = _reopen(window, qapp, layout_name="Broken")
     try:
         assert len(again.views) == 3
     finally:
         again.close()
 
 
-def test_screenshot_mode_neither_reads_nor_writes_a_layout(window, qapp):
-    from syncviz_app.layout import layout_path
-
-    path = window.project.path
-    window.close()
-    layout_path(path).unlink(missing_ok=True)
-    plain = build_window(path, use_layout=False)
-    plain.close()
-    assert not layout_path(path).exists()
-
-
-# -- several named layouts per project, and saving on demand -------------------------------
-def test_the_save_button_writes_the_layout_without_closing(window):
-    from syncviz_app.layout import layout_path, load_store
-
-    path = layout_path(window.project.path)
-    path.unlink(missing_ok=True)
-    window.views_panel.save_button.click()
-    assert path.exists() and "Default" in load_store(path).layouts
-    assert "Saved layout" in window.statusBar().currentMessage()
-
-
-def test_layouts_are_named_and_switching_changes_the_views_shown(window, qapp):
-    from syncviz_app.add_view_dialog import collect_candidates
-
-    full = len(window.views)
-    window.save_layout_as("Overview")                      # a second layout, starting as a copy
-    assert window.layouts.current == "Overview" and set(window.layouts.names) == {"Default", "Overview"}
-    window.remove_view(next(v for v in window.views if v.type_name == "video"))
-    assert len(window.views) == full - 1
-    window.switch_layout("Default")
-    assert len(window.views) == full                       # Default still has the video
-    assert window.views_panel.list.count() == full
-    window.switch_layout("Overview")
-    assert len(window.views) == full - 1                   # and Overview remembers it was removed
-    spec = next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
-    window.add_view(spec)
-    window.switch_layout("Default")
-    assert len(window.views) == full                       # the added view belongs to Overview only
-
-
-def test_layouts_and_the_one_in_use_survive_reopening(window, qapp):
-    window.save_layout_as("Overview")
+def test_reset_shows_the_project_defaults_without_saving(window):
     window.remove_view(window.views[0])
-    again = _reopen(window, qapp)
+    window.reset_layout()
+    assert len(window.views) == 3 and not window.layout_dir.exists()
+
+
+def test_screenshot_mode_neither_reads_nor_writes_layouts(window, qapp):
+    path = window.project.path
+    window.save_layout_as("Keep")
+    window.close()
+    plain = build_window(path, use_layout=False)
     try:
-        assert again.layouts.current == "Overview" and "Default" in again.layouts.names
-        assert len(again.views) == 2
+        assert plain.layout_dir is None
+        plain.save_layout_clicked()
     finally:
-        again.close()
-
-
-def test_the_last_layout_cannot_be_deleted_and_deleting_the_current_one_switches(window):
-    assert not window.delete_layout("Default")
-    window.save_layout_as("Other")
-    assert window.delete_layout("Other")
-    assert window.layouts.current == "Default" and window.layouts.names == ["Default"]
-
-
-def test_a_layout_file_from_before_names_existed_becomes_the_default_layout(tmp_path):
-    from syncviz_app.layout import load_store
-
-    old = tmp_path / "p.layout.json"
-    old.write_text('{"version": 1, "added": [], "removed": ["Clip"]}', encoding="utf-8")
-    store = load_store(old)
-    assert store.current == "Default" and store.active.removed == ["Clip"]
-
-
-def test_each_project_keeps_its_own_layouts(window):
-    from syncviz_app.layout import layout_path
-
-    other = window.project.path.with_name("other.yaml")
-    assert layout_path(other) != layout_path(window.project.path)
+        plain.close()
+    assert sorted(p.name for p in (path.parent / "layouts").glob("*.json")) == ["Keep.json"]

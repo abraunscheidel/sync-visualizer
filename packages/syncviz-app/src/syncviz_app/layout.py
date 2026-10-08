@@ -1,27 +1,26 @@
-"""What the user has changed about the window since the project file was written.
+"""Layouts: what the user has arranged in the window, kept as named presets for each project.
 
-The project file is the author's description of the data and is never rewritten by the app (it is
-hand-edited and has comments). Everything the user adjusts while working is kept beside it in
-`<project>.layout.json` and applied on top the next time the project opens. A project can have
-several named layouts (for example one for reviewing behaviour and one for whisker analysis), and
-the one in use is saved automatically under its name when the window closes or another is chosen.
-
-A layout is:
+The project file is the author's description of the data and is never rewritten by the app. A
+layout is the user's arrangement on top of it:
 
 * the views the user added, and which of the project's own views they removed;
 * where the panels, toolbars and sidebar are and how big (Qt's saved window state).
 
-Each project has its own file, so projects never share or overwrite one another's layouts.
+Each layout is its own file, `<name>.json`, in the project's own `layouts` folder (next to the
+project file, or wherever the project's `layouts_dir` says), so projects never share files. The
+project file may say which layout opens first (`layout: Whisker analysis`), and `--layout NAME`
+on the command line overrides that. Layouts are written only when the user saves them.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-VERSION = 2
 DEFAULT_NAME = "Default"
+LAYOUTS_FOLDER = "layouts"
 
 
 @dataclass
@@ -33,56 +32,48 @@ class Layout:
     views_state: str | None = None                        # Qt state of the views area, base64
 
 
-@dataclass
-class LayoutStore:
-    """All of a project's named layouts and which one is in use."""
-
-    current: str = DEFAULT_NAME
-    layouts: dict[str, Layout] = field(default_factory=lambda: {DEFAULT_NAME: Layout()})
-
-    @property
-    def active(self) -> Layout:
-        return self.layouts[self.current]
-
-    @property
-    def names(self) -> list[str]:
-        return list(self.layouts)
+def layouts_dir(project_path: str | Path, configured: str | None = None) -> Path:
+    """The folder holding this project's layouts."""
+    return Path(project_path).parent / (configured or LAYOUTS_FOLDER)
 
 
-def layout_path(project_path: str | Path) -> Path:
-    path = Path(project_path)
-    return path.with_name(f"{path.stem}.layout.json")
+def _file(directory: Path, name: str) -> Path:
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .") or DEFAULT_NAME
+    return directory / f"{safe}.json"
 
 
-def _layout_from(data: dict) -> Layout:
-    return Layout(
-        added=[dict(s) for s in data.get("added", [])],
-        removed=[str(t) for t in data.get("removed", [])],
-        window=data.get("window"),
-        main_state=data.get("main_state"),
-        views_state=data.get("views_state"),
-    )
+def list_layouts(directory: Path) -> list[str]:
+    """Names of the saved layouts, in alphabetical order."""
+    names = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        try:
+            names.append(str(json.loads(path.read_text(encoding="utf-8"))["name"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue                                       # not one of ours, or unreadable
+    return names
 
 
-def load_store(path: Path) -> LayoutStore:
-    """The saved layouts, or just the default one if there is no file or it cannot be read.
-    A file from before layouts were named becomes the layout called "Default"."""
+def load_layout(directory: Path, name: str) -> Layout | None:
+    """The named layout, or None if there is none or it cannot be read."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if data.get("version") == 1:
-            return LayoutStore(DEFAULT_NAME, {DEFAULT_NAME: _layout_from(data)})
-        if data.get("version") != VERSION:
-            return LayoutStore()
-        layouts = {str(name): _layout_from(body) for name, body in data["layouts"].items()}
-        if not layouts:
-            return LayoutStore()
-        current = data.get("current")
-        return LayoutStore(current if current in layouts else next(iter(layouts)), layouts)
-    except (OSError, ValueError, TypeError, AttributeError, KeyError):
-        return LayoutStore()
+        data = json.loads(_file(directory, name).read_text(encoding="utf-8"))
+        return Layout(
+            added=[dict(s) for s in data.get("added", [])],
+            removed=[str(t) for t in data.get("removed", [])],
+            window=data.get("window"),
+            main_state=data.get("main_state"),
+            views_state=data.get("views_state"),
+        )
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
 
 
-def save_store(path: Path, store: LayoutStore) -> None:
-    body = {"version": VERSION, "current": store.current,
-            "layouts": {name: asdict(layout) for name, layout in store.layouts.items()}}
-    path.write_text(json.dumps(body, indent=2), encoding="utf-8")
+def save_layout(directory: Path, name: str, layout: Layout) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = _file(directory, name)
+    path.write_text(json.dumps({"name": name, **asdict(layout)}, indent=2), encoding="utf-8")
+    return path
+
+
+def delete_layout(directory: Path, name: str) -> None:
+    _file(directory, name).unlink(missing_ok=True)

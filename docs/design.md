@@ -1967,13 +1967,16 @@ file yet.
 
 ### 28.3 Saved layouts
 
-The project file is the author's description of the data and is never rewritten. What the user changes
-while working is kept beside it in `<project>.layout.json` (git-ignored), one file per project so
-projects never share layouts. A project can hold several **named layouts**; each is the views the user
-added, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar positions (including
-which panels are hidden). The **Layout** menu lists them (the one in use is ticked) and offers *Save layout*
-(Ctrl+S, also a button under the views list), *Save layout as…*, *Delete layout* and *Reset this layout to the
-project's defaults*. Choosing another layout saves the one in use, then adds and removes views and moves panels
-live. The layout in use is also saved when the window closes, and is the one that opens next time. A missing,
-unreadable or wrong-version file is ignored, a pre-naming file becomes "Default", and `--screenshot` mode neither
-reads nor writes it.
+The project file is the author's description of the data and is never rewritten. What the user arranges is a
+**layout**: the views added, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar
+positions (including which panels are hidden). Each layout is its own file, `<name>.json`, in the project's own
+`layouts` folder (next to the project file; `layouts_dir:` in the project file moves it), so projects never
+share files and a project can hold several presets (the folder is git-ignored). Which one opens first is the
+project file's `layout: <name>`, overridden by `--layout NAME`; otherwise "Default", and if that has not been saved
+the project's own views are shown.
+
+**Nothing is written unless the user saves.** *Save layout* (Ctrl+S, also a button under the views list) writes the
+layout in use; closing never saves, and switching to another layout drops unsaved changes to the one left. The Layout
+menu lists the saved layouts (the one in use is ticked and named in the window title) with *Save layout as…*,
+*Delete layout* and *Reset to the project's defaults* (which changes only what is on screen). A layout that is missing
+or unreadable is ignored, and `--screenshot` mode uses none.

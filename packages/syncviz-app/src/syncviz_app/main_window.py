@@ -17,7 +17,7 @@ from syncviz_app.context import AppContext
 from syncviz_app.debug import DebugTools
 from syncviz_app.controls import FilterBar, NavigationBar
 from syncviz_app.info_panel import InfoPanel
-from syncviz_app.layout import DEFAULT_NAME, Layout, LayoutStore, save_store
+from syncviz_app.layout import DEFAULT_NAME, Layout, delete_layout, list_layouts, load_layout, save_layout
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.stall import StallGuard
@@ -31,17 +31,16 @@ PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project, context: AppContext, views: list[View], debug: bool = False,
-                 layouts: LayoutStore | None = None, layout_file=None) -> None:
+                 layout: Layout | None = None, layout_dir=None, layout_name: str = DEFAULT_NAME) -> None:
         super().__init__()
-        self.layout_file = layout_file                      # where the user's changes are kept; None = not kept
-        self.layouts = layouts or LayoutStore()
-        saved = self.layouts.active
+        self.layout_dir = layout_dir                        # this project's layouts folder; None = layouts are off
+        self.layout_name = layout_name                      # the layout in use (it may not be saved yet)
+        saved = layout or Layout()
         self._added: dict[str, dict] = {s.get("title") or s["type"]: s for s in saved.added}
         self._removed: list[str] = list(saved.removed)
-        self._autosave = layout_file is not None
         self.project, self.context, self.views = project, context, views
         self._colors_used = len(views)                       # colours are never reused, even after a removal
-        self.setWindowTitle(f"Sync Visualizer — {project.name}")
+        self._set_title()
         self.resize(1500, 900)
 
         filter_attrs = []
@@ -106,7 +105,7 @@ class MainWindow(QMainWindow):
         self._pump_timer.timeout.connect(self._pump)
         self._pump_timer.start(int(PUMP_INTERVAL_S * 1000))
 
-        if layouts is not None:
+        if layout_dir is not None:
             self._restore_layout(saved)
         else:
             QTimer.singleShot(0, self._apply_initial_sizes)
@@ -146,21 +145,25 @@ class MainWindow(QMainWindow):
             views_state=encode(self.view_host.saveState()),
         )
 
-    def save_layout_now(self) -> None:
-        """Keep the arrangement in use under its name, in the project's layout file."""
-        if self.layout_file is None or not self._autosave:
-            return
-        self.layouts.layouts[self.layouts.current] = self.current_layout()
-        try:
-            save_store(self.layout_file, self.layouts)
-        except OSError as exc:
-            self.context.notes.append(f"layout not saved: {exc}")
+    def _set_title(self) -> None:
+        suffix = f" — layout {self.layout_name}" if self.layout_dir is not None else ""
+        self.setWindowTitle(f"Sync Visualizer — {self.project.name}{suffix}")
+
+    def saved_layout_names(self) -> list[str]:
+        return list_layouts(self.layout_dir) if self.layout_dir is not None else []
 
     def save_layout_clicked(self) -> None:
-        """Save now, rather than waiting for the window to close."""
-        self.save_layout_now()
-        name = self.layouts.current
-        self.statusBar().showMessage(f"Saved layout '{name}'" if self.layout_file is not None else "Layouts are not kept in this mode", 4000)
+        """Write the arrangement in use to its file. Nothing is saved unless this is asked for."""
+        if self.layout_dir is None:
+            self.statusBar().showMessage("Layouts are not kept in this mode", 4000)
+            return
+        try:
+            save_layout(self.layout_dir, self.layout_name, self.current_layout())
+        except OSError as exc:
+            self.context.notes.append(f"layout not saved: {exc}")
+            self.statusBar().showMessage(f"Could not save layout: {exc}", 8000)
+            return
+        self.statusBar().showMessage(f"Saved layout '{self.layout_name}'", 4000)
 
     def apply_layout(self, layout: Layout) -> None:
         """Make the window match a layout now: the views it has, then where the panels are."""
@@ -178,61 +181,66 @@ class MainWindow(QMainWindow):
         self._restore_layout(layout, geometry=False)           # the window keeps its size when switching
         self._views_changed()
 
-    def switch_layout(self, name: str) -> None:
-        """Save the arrangement in use, then apply another named layout."""
-        if name == self.layouts.current or name not in self.layouts.layouts:
-            return
-        self.save_layout_now()
-        self.layouts.layouts[self.layouts.current] = self.current_layout()    # in memory even if nothing is saved to disk
-        self.layouts.current = name
-        self.apply_layout(self.layouts.active)
+    def switch_layout(self, name: str) -> bool:
+        """Open a saved layout. Changes to the one in use that were not saved are dropped."""
+        layout = load_layout(self.layout_dir, name) if self.layout_dir is not None else None
+        if layout is None:
+            return False
+        self.layout_name = name
+        self._set_title()
+        self.apply_layout(layout)
+        return True
 
     def save_layout_as(self, name: str) -> bool:
-        """Keep the current arrangement under a new name and carry on in it. An existing name is overwritten."""
+        """Save the current arrangement under a new name and carry on in it (an existing name is overwritten)."""
         name = name.strip()
-        if not name:
+        if not name or self.layout_dir is None:
             return False
-        self.layouts.layouts[name] = self.current_layout()
-        self.layouts.current = name
-        self.save_layout_now()
+        self.layout_name = name
+        self._set_title()
+        self.save_layout_clicked()
         return True
 
     def delete_layout(self, name: str) -> bool:
-        """Forget a named layout. The last one cannot be deleted; deleting the one in use switches to another."""
-        if name not in self.layouts.layouts or len(self.layouts.layouts) < 2:
+        """Delete a saved layout. If it is the one in use, the window keeps its arrangement but is
+        no longer attached to a saved file (saving writes it again)."""
+        if self.layout_dir is None or name not in self.saved_layout_names():
             return False
-        if name == self.layouts.current:
-            self.switch_layout(next(n for n in self.layouts.layouts if n != name))
-        del self.layouts.layouts[name]
-        self.save_layout_now()
+        delete_layout(self.layout_dir, name)
+        self.statusBar().showMessage(f"Deleted layout '{name}'", 4000)
         return True
 
     def reset_layout(self) -> None:
-        """Put the layout in use back to the project's own views and the default arrangement."""
+        """Put the window back to the project's own views and the default arrangement. This changes
+        only what is on screen; it is saved if and when the user saves."""
         self.apply_layout(Layout())
-        self.statusBar().showMessage(f"Layout '{self.layouts.current}' reset to the project's defaults", 6000)
+        self.statusBar().showMessage("Showing the project's defaults (save to keep them as this layout)", 6000)
 
     def _fill_layout_menu(self) -> None:
         from PySide6.QtGui import QAction, QActionGroup
 
         menu = self.layout_menu
         menu.clear()
+        enabled = self.layout_dir is not None
+        saved = self.saved_layout_names()
         group = QActionGroup(menu)
-        for name in self.layouts.names:
-            action = QAction(name, menu)
+        for name in dict.fromkeys(saved + ([self.layout_name] if enabled else [])):
+            action = QAction(name if name in saved else f"{name} (not saved yet)", menu)
             action.setCheckable(True)
-            action.setChecked(name == self.layouts.current)
+            action.setChecked(name == self.layout_name)
+            action.setEnabled(enabled and name in saved)
             action.triggered.connect(lambda _c=False, n=name: self.switch_layout(n))
             group.addAction(action)
             menu.addAction(action)
         menu.addSeparator()
-        save = menu.addAction(f"Save layout '{self.layouts.current}'", self.save_layout_clicked)
+        save = menu.addAction(f"Save layout '{self.layout_name}'", self.save_layout_clicked)
         save.setShortcut(QKeySequence.StandardKey.Save)
-        save.setEnabled(self.layout_file is not None)
-        menu.addAction("Save layout as…", self._ask_save_layout_as)
-        delete = menu.addAction(f"Delete layout '{self.layouts.current}'", lambda: self.delete_layout(self.layouts.current))
-        delete.setEnabled(len(self.layouts.layouts) > 1)
-        menu.addAction("Reset this layout to the project's defaults", self.reset_layout)
+        save.setEnabled(enabled)
+        as_new = menu.addAction("Save layout as…", self._ask_save_layout_as)
+        as_new.setEnabled(enabled)
+        delete = menu.addAction(f"Delete layout '{self.layout_name}'", lambda: self.delete_layout(self.layout_name))
+        delete.setEnabled(enabled and self.layout_name in saved)
+        menu.addAction("Reset to the project's defaults", self.reset_layout)
 
     def _ask_save_layout_as(self) -> None:
         from PySide6.QtWidgets import QInputDialog
@@ -333,7 +341,6 @@ class MainWindow(QMainWindow):
         self.scheduler.pump(time.perf_counter(), self.context.timeline.time, force=True)
 
     def closeEvent(self, event) -> None:
-        self.save_layout_now()
         self._play_timer.stop()
         self._pump_timer.stop()
         for view in self.views:
