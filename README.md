@@ -37,7 +37,7 @@ Or with plain pip:
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e packages/syncviz -e packages/syncviz-nwb pytest
+pip install -e packages/syncviz -e packages/syncviz-nwb -e packages/syncviz-video pytest
 pytest
 ```
 
