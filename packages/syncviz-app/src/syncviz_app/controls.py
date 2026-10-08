@@ -51,11 +51,17 @@ class ControlsBar(QToolBar):
                 box.addItem(ALL, None)
                 for value in nav.intervals.unique(attribute):
                     box.addItem(str(value), value)
-                box.currentIndexChanged.connect(self._filters_changed)
                 self.addSeparator()
                 self.addWidget(QLabel(f"{attribute}: "))
                 self.addWidget(box)
                 self._filters[attribute] = box
+            self._refresh_options()                       # counts in the option text; dead ends disabled
+            for box in self._filters.values():
+                box.currentIndexChanged.connect(self._filters_changed)
+            self.match_label = QLabel()
+            self.match_label.setMinimumWidth(110)
+            self.addSeparator()
+            self.addWidget(self.match_label)
             # With a filter active, playback normally jumps over segments that don't match it.
             # Unticking this plays straight through everything instead.
             self.addSeparator()
@@ -108,15 +114,39 @@ class ControlsBar(QToolBar):
         nav = self.context.navigator
         self.segment_label.setText(f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})  ")
         self.skip.setEnabled(nav.filtered)                  # nothing to skip without a filter
+        total = len(nav.intervals)
+        noun = f"{nav.label.lower()}s"
+        self.match_label.setText(f"{nav.count} of {total} match" if nav.filtered else f"{total} {noun}")
+
+    def _selected(self, skip: str | None = None) -> dict:
+        return {a: box.currentData() for a, box in self._filters.items()
+                if a != skip and box.currentData() is not None}
+
+    def _refresh_options(self) -> None:
+        """Show how many segments each option would leave, and disable options that leave none.
+
+        Each option is counted against the *other* filters' current choices, so the options
+        always describe what clicking them would do. The selected option stays enabled.
+        """
+        nav = self.context.navigator
+        for attribute, box in self._filters.items():
+            counts = nav.facet_counts(attribute, **self._selected(skip=attribute))
+            model = box.model()
+            for i in range(box.count()):
+                value = box.itemData(i)
+                n = sum(counts.values()) if value is None else counts.get(value, 0)
+                box.setItemText(i, f"{ALL} ({n})" if value is None else f"{value} ({n})")
+                model.item(i).setEnabled(n > 0 or i == box.currentIndex())
 
     def _filters_changed(self, _index: int) -> None:
         nav = self.context.navigator
-        criteria = {a: box.currentData() for a, box in self._filters.items() if box.currentData() is not None}
+        criteria = self._selected()
+        self._refresh_options()
         if not criteria:
             nav.clear_filter()
             return
         try:
             nav.filter(**criteria)
         except ValueError:
-            # This combination matches nothing. Say so and leave the view as it was.
+            # Unreachable from the UI, since options that match nothing are disabled.
             self.segment_label.setText(f"  no {nav.label.lower()} matches  ")

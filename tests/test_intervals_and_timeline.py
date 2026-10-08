@@ -189,13 +189,13 @@ def test_filter_limits_navigation_and_keeps_current_if_still_visible():
     assert nav.index == 2            # skipped the filtered-out concave trials
 
 
-def test_filter_moves_to_first_match_when_current_is_hidden():
+def test_filter_moves_to_the_next_match_when_current_is_hidden():
     _, tl, nav = make_navigator()
-    nav.select(1)                    # concave
+    nav.select(1)                    # concave, at 10-19 s
 
-    nav.filter(stimulus="convex")
+    nav.filter(stimulus="convex")    # matches are 0 and 2; the next one after segment 1 is 2
 
-    assert nav.index == 0 and tl.time == 0.0
+    assert nav.index == 2 and tl.time == 20.0
 
 
 def test_selecting_a_hidden_segment_is_rejected():
@@ -319,3 +319,80 @@ def test_seeking_by_hand_into_a_hidden_segment_is_allowed_while_paused():
     bus.publish(Seek(15.0))                    # a hidden (concave) segment
 
     assert tl.time == 15.0 and not tl.playing
+
+
+# --- facet counts and where a filter change lands --------------------------------------------
+
+def make_two_attribute_intervals():
+    # stimulus x outcome: convex+error and concave+... deliberately leave one combination empty
+    return IntervalSeries(
+        starts=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        stops=[9.0, 19.0, 29.0, 39.0, 49.0, 59.0],
+        attributes={
+            "stimulus": np.array(["convex", "concave", "convex", "concave", "convex", "concave"]),
+            "outcome": np.array(["correct", "correct", "correct", "error", "correct", "error"]),
+        },
+    )
+
+
+def test_facet_counts_use_the_other_filters_as_criteria():
+    nav = SegmentNavigator(ActionBus(), make_two_attribute_intervals())
+
+    assert nav.facet_counts("stimulus") == {"concave": 3, "convex": 3}
+    assert nav.facet_counts("stimulus", outcome="error") == {"concave": 2}      # no convex errors exist
+    assert nav.facet_counts("outcome", stimulus="convex") == {"correct": 3}
+
+
+def test_facet_counts_unknown_attribute_is_a_clear_error():
+    nav = SegmentNavigator(ActionBus(), make_two_attribute_intervals())
+
+    with pytest.raises(KeyError, match="colour"):
+        nav.facet_counts("colour")
+
+
+def test_filter_moves_to_the_first_match_after_the_playhead_not_the_first_in_the_session():
+    bus = ActionBus()
+    tl = Timeline(bus, 0.0, 60.0)
+    nav = SegmentNavigator(bus, make_two_attribute_intervals())
+    nav.follow(tl)
+    nav.select(3)                                 # concave+error at 30-39
+    bus.publish(Seek(35.0))
+
+    nav.filter(stimulus="convex")                 # hides the current segment; matches are 0, 2, 4
+
+    assert nav.index == 4 and tl.time == 40.0     # the next match ahead, not segment 0
+
+
+def test_filter_falls_back_to_the_last_match_before_when_none_is_ahead():
+    bus = ActionBus()
+    tl = Timeline(bus, 0.0, 60.0)
+    nav = SegmentNavigator(bus, make_two_attribute_intervals())
+    nav.follow(tl)
+    nav.select(5)                                 # 50-59, the last segment
+    bus.publish(Seek(55.0))
+
+    nav.filter(stimulus="convex")
+
+    assert nav.index == 4                         # nothing ahead, so the nearest one behind
+
+
+def test_filter_without_a_timeline_still_moves_forward_from_the_current_segment():
+    nav = SegmentNavigator(ActionBus(), make_two_attribute_intervals())
+    nav.select(3)
+
+    nav.filter(stimulus="convex")
+
+    assert nav.index == 4
+
+
+def test_filter_keeps_the_current_segment_when_it_still_matches():
+    bus = ActionBus()
+    tl = Timeline(bus, 0.0, 60.0)
+    nav = SegmentNavigator(bus, make_two_attribute_intervals())
+    nav.follow(tl)
+    nav.select(2)
+    bus.publish(Seek(25.0))
+
+    nav.filter(stimulus="convex")
+
+    assert nav.index == 2 and tl.time == 25.0     # the playhead did not move at all

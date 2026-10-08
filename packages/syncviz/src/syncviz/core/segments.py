@@ -35,6 +35,7 @@ class SegmentNavigator:
         self.label = label                         # display text only
         self.index_attribute = index_attribute     # attribute shown as the segment's number
         self.skip_hidden = True                    # while playing with a filter active, skip non-matching segments
+        self._timeline = None                      # set by follow()
         self._observers: list[Callable[[SegmentNavigator], None]] = []
         self._set_visible(list(range(len(intervals))))
         self._position = 0                         # position within the visible list
@@ -85,6 +86,7 @@ class SegmentNavigator:
     # -- following the timeline ----------------------------------------------------------
     def follow(self, timeline) -> None:
         """Track the playhead: keep the current segment in step with it, and skip while playing."""
+        self._timeline = timeline
         timeline.subscribe(self._on_timeline)
 
     def _on_timeline(self, timeline) -> None:
@@ -128,18 +130,37 @@ class SegmentNavigator:
             self._position = position
             self._announce()
 
+    def facet_counts(self, attribute: str, **criteria: Any) -> dict[Any, int]:
+        """How many segments have each value of `attribute`, among those matching `criteria`.
+
+        Used to show what each option of one filter would leave given the other filters, and
+        to disable options that would leave nothing. Pass the *other* filters as criteria.
+        """
+        if attribute not in self.intervals.attributes:
+            raise KeyError(f"no attribute {attribute!r} (available: {sorted(self.intervals.attributes)})")
+        rows = self.intervals.select(**criteria) if criteria else np.arange(len(self.intervals))
+        values, counts = np.unique(self.intervals.attributes[attribute][rows], return_counts=True)
+        return dict(zip(values.tolist(), counts.tolist()))
+
     def filter(self, **criteria: Any) -> None:
-        """Show only matching segments. Keeps the current segment if it still matches."""
+        """Show only matching segments. Keeps the current segment if it still matches.
+
+        If the current segment is hidden, move to the first match after the playhead (or the
+        last match before it when none is left ahead), so changing a filter moves you as
+        little as possible.
+        """
         visible = self.intervals.select(**criteria).tolist()
         if not visible:
             raise ValueError(f"no segments match {criteria}")
         current = self.index
+        reference = self._timeline.time if self._timeline is not None else float(self.intervals.starts[current])
         self._set_visible(visible)
         if current in self._visible_set:
             self._position = visible.index(current)
             self._notify()
         else:
-            self._position = 0
+            ahead = int(np.searchsorted(self._visible_starts, reference, side="right"))
+            self._position = ahead if ahead < len(visible) else len(visible) - 1
             self._announce()
 
     def clear_filter(self) -> None:
