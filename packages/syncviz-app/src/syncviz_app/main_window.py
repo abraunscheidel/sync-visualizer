@@ -362,4 +362,5 @@ class MainWindow(QMainWindow):
         self._pump_timer.stop()
         for view in self.views:
             view.close_view()
+        self.context.resources.close()
         super().closeEvent(event)

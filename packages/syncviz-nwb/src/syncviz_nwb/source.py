@@ -13,15 +13,30 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
+from syncviz.resources import EventSeries, IntervalSeries, LazyTimeSeries, TimeSeries
 from syncviz.sources import DataEntry, Source
 
 _TIME_COLUMNS = {"start_time", "stop_time"}
+LAZY_MIN_SAMPLES = 5_000_000      # a series with at least this many samples stays in the file
 
 
 class NWBSource(Source):
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, lazy_min_samples: int = LAZY_MIN_SAMPLES) -> None:
         self.path = Path(path)
+        self.lazy_min_samples = lazy_min_samples
+        self._h5 = None                      # read-only handle kept open while lazy series are in use
+
+    def _h5file(self):
+        if self._h5 is None:
+            import h5py
+
+            self._h5 = h5py.File(self.path, "r")
+        return self._h5
+
+    def close(self) -> None:
+        if self._h5 is not None:
+            self._h5.close()
+            self._h5 = None
 
     def _open(self):
         # Imported lazily so discovering the plugin doesn't pay pynwb's import cost.
@@ -130,14 +145,26 @@ class NWBSource(Source):
             for name, ts in members.items():
                 if wanted is not None and name not in wanted:
                     continue
+                scale = float(getattr(ts, "conversion", 1.0) or 1.0)
+                offset = float(getattr(ts, "offset", 0.0) or 0.0)
+                if len(ts.data.shape) == 1 and ts.data.shape[0] >= self.lazy_min_samples:
+                    out[name] = self._lazy(ts, scale, offset, f"{path}/{name}")
+                    continue
                 if ts.timestamps is not None:
                     times = np.asarray(ts.timestamps[:], dtype=float)
                 else:
                     times = ts.starting_time + np.arange(len(ts.data)) / ts.rate
-                out[name] = TimeSeries(
-                    times=times,
-                    values=np.asarray(ts.data[:]),
-                    unit=ts.unit or "",
-                    name=f"{path}/{name}",
-                )
+                values = np.asarray(ts.data[:])
+                if scale != 1.0 or offset != 0.0:
+                    values = values.astype(float) * scale + offset
+                out[name] = TimeSeries(times=times, values=values, unit=ts.unit or "", name=f"{path}/{name}")
             return out
+
+    def _lazy(self, ts, scale: float, offset: float, name: str) -> LazyTimeSeries:
+        """A series left in the file: its samples (and explicit timestamps) are read a window at a time."""
+        h5 = self._h5file()
+        data = h5[ts.data.name]
+        common = dict(scale=scale, offset=offset, unit=ts.unit or "", name=name)
+        if ts.timestamps is not None:
+            return LazyTimeSeries(data, times=h5[ts.timestamps.name], **common)
+        return LazyTimeSeries(data, start=float(ts.starting_time), rate=float(ts.rate), **common)

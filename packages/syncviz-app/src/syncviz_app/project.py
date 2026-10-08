@@ -32,6 +32,10 @@ class ResourceStore:
         self.sources = sources
         self._cache: dict[tuple, Any] = {}
 
+    def close(self) -> None:
+        for source in self.sources.values():
+            source.close()
+
     def source(self, name: str) -> Source:
         if name not in self.sources:
             raise KeyError(f"no source named {name!r} (declared: {sorted(self.sources)})")

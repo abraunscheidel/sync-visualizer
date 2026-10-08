@@ -15,6 +15,7 @@ import numpy as np
 
 from syncviz.core.actions import ActionBus, Seek, SetPlaying, StepTime
 from syncviz.core.timeline import Timeline
+from syncviz.resources.timeseries import bisect_array
 
 EPS = 1e-9
 FIXED_INTERVAL = "Fixed interval"       # the name under which a fixed step is offered alongside views
@@ -63,6 +64,21 @@ class SampleTimes:
             i = int(np.searchsorted(self.times, time + EPS, side="right"))
             return float(self.times[i]) if i < len(self.times) else None
         i = int(np.searchsorted(self.times, time - EPS, side="left")) - 1
+        return float(self.times[i]) if i >= 0 else None
+
+
+@dataclass(frozen=True)
+class LazySampleTimes:
+    """Like `SampleTimes`, for a sorted time axis too large to load (an array-like on disk): the
+    neighbour is found by a handful of single-sample reads."""
+
+    times: object
+
+    def neighbor(self, time: float, direction: int) -> float | None:
+        if direction > 0:
+            i = bisect_array(self.times, time + EPS, "right")
+            return float(self.times[i]) if i < len(self.times) else None
+        i = bisect_array(self.times, time - EPS, "left") - 1
         return float(self.times[i]) if i >= 0 else None
 
 

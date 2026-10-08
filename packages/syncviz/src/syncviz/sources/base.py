@@ -29,6 +29,9 @@ class Source(ABC):
     def describe(self) -> list[str]:
         """Names of the data objects this source can provide, without loading them."""
 
+    def close(self) -> None:
+        """Release files held open for lazy reading. Safe to call more than once."""
+
     def catalog(self) -> list[DataEntry]:
         """What this source offers, classified by kind, for the "add a view" dialog. Sources that
         cannot say return nothing and can still be used through the project file."""

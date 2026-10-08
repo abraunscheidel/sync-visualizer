@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 
-from syncviz.core import SampleTimes
 from syncviz_app.views.base import Candidate
 from syncviz_app.views.timewindow import TimeWindowView, break_at_gaps
+
+
+MIN_POINTS = 2000
 
 
 class TimeSeriesView(TimeWindowView):
@@ -34,7 +36,8 @@ class TimeSeriesView(TimeWindowView):
         if self.series.unit:
             self.plot.setLabel("left", self.series.unit)
         # Fixed vertical range from the whole series, so the plot doesn't rescale as it scrolls.
-        finite = self.series.values[np.isfinite(self.series.values)]
+        finite = self.series.sample_values()
+        finite = finite[np.isfinite(finite)]
         if finite.size:
             lo, hi = np.percentile(finite, [0.5, 99.5])
             pad = (hi - lo) * 0.1 or 1.0
@@ -43,16 +46,19 @@ class TimeSeriesView(TimeWindowView):
     def extent(self):
         if len(self.series) == 0:
             return None
-        return float(self.series.times[0]), float(self.series.times[-1])
+        return self.series.first_time, self.series.last_time
 
     def coverage(self):
         return [(float(a), float(b)) for a, b in self.series.coverage()]
 
     def time_base(self):
-        return SampleTimes(self.series.times) if len(self.series) else None
+        return self.series.time_base()
 
     def refresh(self, time: float) -> None:
         lo, hi = self.set_window(time)
-        window = self.series.window(lo, hi)
-        times, values = break_at_gaps(window.times, window.values)
+        budget = max(2 * self.plot.width(), MIN_POINTS)       # more points than pixels cannot be seen
+        window = self.series.window(lo, hi, max_points=budget)
+        times, values = window.times, window.values
+        if self.series.count_between(lo, hi) <= budget:       # a thinned window has no true spacing to find gaps in
+            times, values = break_at_gaps(times, values)
         self.curve.setData(times, values)

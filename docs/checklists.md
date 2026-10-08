@@ -28,6 +28,7 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 
 - [ ] Entry point in group `syncviz.sources`; implement `describe()` and `catalog()` (so its data can be added from the UI).
 - [ ] Nothing source-specific in the core; it hands out generic resources only.
+- [ ] Anything that can be large (continuous signals) comes back as a `LazyTimeSeries` over the file, never loaded whole (§34.5); implement `close()` if the source keeps a file open.
 
 ## Before pushing
 

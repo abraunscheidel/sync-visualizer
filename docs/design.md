@@ -1983,3 +1983,24 @@ The Workspace menu lists the saved ones (the one in use is ticked and named in t
 workspace as…*, *Delete workspace* and *Reset to the project's defaults* (which changes only what is on screen).
 A workspace that is missing or unreadable is ignored, saved values that no longer exist (a filter option, a frame
 definition) are skipped, and `--screenshot` mode uses none.
+
+### 34.5 Reading large series lazily
+
+Continuous recordings can be many gigabytes (the ephys session in DANDI 000231 is about 6.8 GB), so a series is
+never assumed to fit in memory. A source returns either a `TimeSeries` (all samples in memory) or a
+`LazyTimeSeries` (a handle to samples that stay in their file) and views use only what both offer: `window`,
+`coverage`, `first_time`, `last_time`, `count_between`, `sample_values` and `time_base`.
+
+* **Windows:** `window(lo, hi, max_points)` reads only those samples. A regular series needs no stored time axis;
+  an explicit one (an array of timestamps) is searched by binary search (about log2 n single-value reads), never
+  loaded. A window with more samples than a plot has pixels is reduced to the lowest and highest sample of each
+  bucket, which looks identical to plotting everything; a window too big to read at all (over 20 million samples)
+  is read thinned.
+* **Axis range:** from about fifty small blocks spread through the series, not a strided read (which touches
+  every stored chunk and so reads the whole file).
+* **Gaps:** a regular series has none; an explicit time axis is scanned once in 4-million-sample chunks.
+* **NWB:** a series of 5 million samples or more (`lazy_min_samples` in the source's configuration) stays in the
+  file, read through a read-only HDF5 handle that is kept open and released when the window closes.
+  `conversion` and `offset` are applied to stored numbers for both kinds, so values are in the series' unit.
+* **Not yet:** multi-channel traces (2-D) are not offered by the Add view dialog; they need a channel choice.
+  Thinned windows draw no gap breaks (their spacing is no longer the data's).
