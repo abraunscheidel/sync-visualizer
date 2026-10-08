@@ -604,3 +604,67 @@ def test_screenshot_mode_neither_reads_nor_writes_a_layout(window, qapp):
     plain = build_window(path, use_layout=False)
     plain.close()
     assert not layout_path(path).exists()
+
+
+# -- several named layouts per project, and saving on demand -------------------------------
+def test_the_save_button_writes_the_layout_without_closing(window):
+    from syncviz_app.layout import layout_path, load_store
+
+    path = layout_path(window.project.path)
+    path.unlink(missing_ok=True)
+    window.views_panel.save_button.click()
+    assert path.exists() and "Default" in load_store(path).layouts
+    assert "Saved layout" in window.statusBar().currentMessage()
+
+
+def test_layouts_are_named_and_switching_changes_the_views_shown(window, qapp):
+    from syncviz_app.add_view_dialog import collect_candidates
+
+    full = len(window.views)
+    window.save_layout_as("Overview")                      # a second layout, starting as a copy
+    assert window.layouts.current == "Overview" and set(window.layouts.names) == {"Default", "Overview"}
+    window.remove_view(next(v for v in window.views if v.type_name == "video"))
+    assert len(window.views) == full - 1
+    window.switch_layout("Default")
+    assert len(window.views) == full                       # Default still has the video
+    assert window.views_panel.list.count() == full
+    window.switch_layout("Overview")
+    assert len(window.views) == full - 1                   # and Overview remembers it was removed
+    spec = next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
+    window.add_view(spec)
+    window.switch_layout("Default")
+    assert len(window.views) == full                       # the added view belongs to Overview only
+
+
+def test_layouts_and_the_one_in_use_survive_reopening(window, qapp):
+    window.save_layout_as("Overview")
+    window.remove_view(window.views[0])
+    again = _reopen(window, qapp)
+    try:
+        assert again.layouts.current == "Overview" and "Default" in again.layouts.names
+        assert len(again.views) == 2
+    finally:
+        again.close()
+
+
+def test_the_last_layout_cannot_be_deleted_and_deleting_the_current_one_switches(window):
+    assert not window.delete_layout("Default")
+    window.save_layout_as("Other")
+    assert window.delete_layout("Other")
+    assert window.layouts.current == "Default" and window.layouts.names == ["Default"]
+
+
+def test_a_layout_file_from_before_names_existed_becomes_the_default_layout(tmp_path):
+    from syncviz_app.layout import load_store
+
+    old = tmp_path / "p.layout.json"
+    old.write_text('{"version": 1, "added": [], "removed": ["Clip"]}', encoding="utf-8")
+    store = load_store(old)
+    assert store.current == "Default" and store.active.removed == ["Clip"]
+
+
+def test_each_project_keeps_its_own_layouts(window):
+    from syncviz_app.layout import layout_path
+
+    other = window.project.path.with_name("other.yaml")
+    assert layout_path(other) != layout_path(window.project.path)

@@ -1965,11 +1965,15 @@ update colours, extents, the timeline's range, the frame-definition choices and 
 (`view_factory.py`). Views added in the UI last for the session; they are not written back to the project
 file yet.
 
-### 28.3 Saved layout
+### 28.3 Saved layouts
 
 The project file is the author's description of the data and is never rewritten. What the user changes
-while working is saved beside it, when the window closes, in `<project>.layout.json` (git-ignored): the
-views added in the UI, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar
-positions (which include which panels are hidden). It is applied on top of the project the next time it
-opens. A missing, unreadable or wrong-version file is ignored. **Layout > Reset layout** deletes it
-(applies at next start), and `--screenshot` mode neither reads nor writes it.
+while working is kept beside it in `<project>.layout.json` (git-ignored), one file per project so
+projects never share layouts. A project can hold several **named layouts**; each is the views the user
+added, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar positions (including
+which panels are hidden). The **Layout** menu lists them (the one in use is ticked) and offers *Save layout*
+(Ctrl+S, also a button under the views list), *Save layout as…*, *Delete layout* and *Reset this layout to the
+project's defaults*. Choosing another layout saves the one in use, then adds and removes views and moves panels
+live. The layout in use is also saved when the window closes, and is the one that opens next time. A missing,
+unreadable or wrong-version file is ignored, a pre-naming file becomes "Default", and `--screenshot` mode neither
+reads nor writes it.
