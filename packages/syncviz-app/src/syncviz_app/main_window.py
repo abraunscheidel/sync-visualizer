@@ -198,6 +198,8 @@ class MainWindow(QMainWindow):
                     continue
                 if origin is not None and type(origin) is view_class:
                     continue                  # the same kind of view for the same data is a filter of this view, not a new view
+                if spec and origin is not None and getattr(origin, "lag", 0.0):
+                    spec = {**spec, "lag_ms": origin.lag * 1000.0}     # a view opened from another starts with its delay (28.9)
                 if spec:
                     show = (lambda _t, _o, spec=spec: self.show_temporary(spec)) if temporary else \
                            (lambda _t, _o, spec=spec: self.add_view(spec))

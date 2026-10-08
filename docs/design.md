@@ -2411,3 +2411,38 @@ work above, look for cheaper sharing: build the window once per module and reset
 views added, lags), keep the generated data files at module scope, and split pure logic from window tests so more of it runs
 without Qt. Tests that change window structure (switching collections, removing views) may still need their own window, so
 sharing will not suit every test and each move must keep the tests independent of order.
+
+### 28.10 Decisions: delay, event conditions, panels
+
+**Views and panels.** A *view* presents recording data; there can be many, each showing something from the data. A *core panel*
+holds or controls shared application state; there is one (the Details panel, the views list, the segment filters, the event
+conditions). The event tracker that lights up when events happen presents data, so it is the indicator-lights view; the
+conditions that restrict the data are state, so they are a docked core panel.
+
+**Delay belongs to the view.** A view's delay is an analysis choice about how to look at the data (the neurons fire when the
+file says they do), not a property of the source. A view opened from another (Open as view, Show in temporary view) starts with
+the origin's delay and the user can change it. *Built.* Three different reasons for an offset exist and should stay apart:
+1. a real clock offset in a source, which belongs on the source as a time mapping (below);
+2. the lag of a processed view (the trailing smoothed rate lags by about its smoothing time), which a processor could declare
+   so the view compensates without anyone typing a number;
+3. an analysis choice, which is today's delay field.
+
+**Later: named delays.** A delay given a name ("neural lag 20 ms") that can be attached to several views and changed in one place.
+
+**Later: mapping and offsetting data (time mapping on a source).** For when two sources really disagree about time, not just how
+the user wants to view them. A source gets an offset (and later a drift) that is applied wherever its data is used, so all views,
+statistics, windows and the sync diagnostics see the corrected times; the diagnostics can suggest a correction when a check fails.
+Easy way to build and test it without waiting for a mismatched data set: make a copy of one of the test videos with a few black
+frames added at the start, so the video lags the recording by a known amount, then check that the sync diagnostics see the offset
+and that entering the offset makes the video line up (blackouts back on the trial starts).
+
+**Event conditions (planned).** A *chip* is a small labelled token for one active condition, shown in a docked panel where it can be
+changed or removed with a click. One chip is one question with an answer: a list of events of which any one counts (the OR) and
+yes or no. Different chips combine with AND, and with the other filters. This covers "(C0 or C1 touched) and (licked)" without a
+query builder; deeper nesting would use saved groups as building blocks. The panel starts empty and the user adds what they need;
+the picker offers only the events the project names, grouped by scope, with search; the chips are saved in the workspace. A chip
+may carry a window relative to the segment ("within the first 500 ms"); by default it means anywhere in the segment. Clicking an
+event in an indicator-lights view offers two commands: only segments with this event (adds a chip), and make windows around this
+event (asks for the size, with a project default, and adds a derived segmentation saved in the workspace). The indicator view
+gains group headings and a search box so a long list stays usable. The usability of the chips should be tested with real use
+before it is settled.

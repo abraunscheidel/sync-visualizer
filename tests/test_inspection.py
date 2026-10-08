@@ -467,3 +467,29 @@ def test_open_as_view_never_offers_the_origins_own_kind_for_the_same_data(window
     assert "Indicator lights" not in labels("open_as_view") and "Events and intervals" in labels("open_as_view")
     assert "Indicator lights" not in labels("peek")                     # a one-row copy of this view is a filter, not a new view
     assert "Indicator lights" in [c.label for c in registry.get("open_as_view").children(target, None)]
+
+
+def test_a_view_opened_from_another_starts_with_its_delay(window):
+    registry = window.context.commands
+    origin = _units(window)
+    origin.resize(600, 400)
+    window.set_view_lag(origin, 20.0)
+    target = Target("session", "units", "events", "12", "Unit 12 · L5b")
+    kept = next(c for c in registry.get("open_as_view").children(target, origin) if c.label == "Events and intervals")
+    kept.run(target, origin)
+    assert window.views[-1].lag == pytest.approx(0.020)
+    peek = next(c for c in registry.get("peek").children(target, origin) if c.label == "Events and intervals")
+    peek.run(target, origin)
+    temporary = next(v for v in window.views if v.temporary)
+    assert temporary.lag == pytest.approx(0.020)
+    assert window.docks[window.views.index(temporary)].windowTitle().count("delayed 20") == 1
+
+
+def test_a_view_opened_without_a_delayed_origin_has_no_delay(window):
+    registry = window.context.commands
+    target = Target("session", "units", "events", "12", "Unit 12 · L5b")
+    still = _units(window)
+    registry.get("open_as_view").children(target, still)[0].run(target, still)
+    assert window.views[-1].lag == 0.0
+    registry.get("open_as_view").children(target, None)[0].run(target, None)
+    assert window.views[-1].lag == 0.0
