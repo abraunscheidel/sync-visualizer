@@ -13,6 +13,7 @@ a *configuration* of the framework, not part of it. See [docs/design.md](docs/de
 packages/
   syncviz/        core: resources, time mappings, synchronization, plugin discovery, UI
   syncviz-nwb/    plugin: NWB source (pynwb)
+  syncviz-video/  plugin: video source and sync-signal detectors (PyAV)
 projects/         project configs (YAML) — describe experiments, don't implement them
 tests/
 docs/design.md    architecture
