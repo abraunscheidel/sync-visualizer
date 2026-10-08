@@ -67,3 +67,24 @@ views:
       - {name: Contact C0, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
       - {name: Contact C1, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
     # Not listed: "rewards right" is a copy of "licks right" in this dataset.
+
+# Evidence about synchronization, shown by Tools > Sync diagnostics. Results are kept (the first scan of a long video
+# takes minutes). "pass" means consistent with the clocks agreeing within the tolerance, not proof.
+sync:
+  tolerance_ms: 20
+  checks:
+    - name: Video blackouts vs trial starts
+      type: paired_events
+      test: video:sync_signal
+      reference: {from: "session:intervals/trials", edge: start}
+      note: >
+        In this dataset the trial times appear to have been defined from these blackouts, so exact agreement is expected
+        and is not independent evidence; it shows the two were built consistently.
+    - name: Neural response to whisker contact
+      type: event_response
+      stimulus: {from: "session:processing/behavior/contacts_by_whisker_C1", edge: start}
+      response: "session:units"
+      expect_ms: [5, 30]
+      note: >
+        Independent of any sync signal: barrel-cortex neurons should fire about 10 to 20 ms after a whisker touches the
+        object. Only recordings with neural data can run it.

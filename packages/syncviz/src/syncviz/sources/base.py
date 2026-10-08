@@ -35,9 +35,16 @@ class DataEntry:
 
 
 class Source(ABC):
+    cache = None        # a DiskCache the application may attach, for sources that keep expensive derived results
+
     @abstractmethod
     def describe(self) -> list[str]:
         """Names of the data objects this source can provide, without loading them."""
+
+    def diagnostics(self) -> list:
+        """Checks this source can run about itself, as `syncviz.diagnostics.CheckResult`s (for example whether a video's
+        frames are evenly spaced). Checks that compare sources belong to the project's `sync` section instead."""
+        return []
 
     def close(self) -> None:
         """Release files held open for lazy reading. Safe to call more than once."""

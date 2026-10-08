@@ -32,6 +32,7 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
+    project.attach_cache(cache)
     context = AppContext(bus=bus, timeline=timeline, resources=project.resources, cache=cache,
                          collection=project.collection, collection_label=project.collection_label)
 

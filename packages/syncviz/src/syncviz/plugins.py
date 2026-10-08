@@ -19,6 +19,7 @@ GROUPS = {
     "sync_methods": "syncviz.sync_methods",
     "sync_detectors": "syncviz.sync_detectors",
     "views": "syncviz.views",
+    "sync_checks": "syncviz.sync_checks",
     "collection_providers": "syncviz.collection_providers",
 }
 

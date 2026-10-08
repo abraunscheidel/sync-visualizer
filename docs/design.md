@@ -2122,3 +2122,44 @@ can never rise before its cause. The price is a lag of about `smooth_ms` (the pe
 which the view's display delay can offset. `smoothing: centered` remains available for a smoother, time-unbiased
 picture; use it knowing it blurs latencies of a few tens of milliseconds.
 
+### 18.2 Synchronization diagnostics
+
+Evidence that the sources' clocks agree, or that they do not. It is a **core application component**, not a view: it is not
+drawn at the playhead, is not part of a workspace's arrangement, has no extent on the timeline strip, and is about how
+sources relate to each other. It is reached from **Tools > Sync diagnostics** and from a status line in the sidebar that is
+always visible ("Sync: 3 pass", in the colour of the worst result), so a problem is not hidden in a window that is closed.
+
+**Where the code lives.** The window, the status and the drawing are core. The generic checks (`syncviz.diagnostics`) know
+nothing about any source. What only a source can say comes from that source's own code, in two ways:
+
+* a source provides the events a check names: the video plugin returns its blackouts as `video:sync_signal` through the
+  sync-detector plugin the project configures; the NWB plugin returns spike units as `session:units`;
+* a source can run checks about itself (`Source.diagnostics()`): the video checks that its frames are evenly spaced,
+  because frame number / rate is true only if none were dropped. A dropped frame makes later frames later than that says.
+
+**Kinds of evidence** (a project's `sync:` section lists them; more kinds can be plugins in `syncviz.sync_checks`):
+
+* `paired_events`: the same moments seen by two sources. Events are paired (nearest within a window, each used once) and the
+  error of each pair is measured: its typical size (median), its spread (95% of errors within), and how much it grows
+  across the recording (drift, fitted to typical pairs so a few glitches do not hide it). The implied rate is reported when
+  one side has a declared rate.
+* `event_response`: an independent cross-check that does not use any sync signal. Neurons should respond a known time after a
+  stimulus; aligned on isolated stimuli, the response peak should fall in the expected window. A clock disagreement
+  moves or smears it. If there is no clear response the result is *inconclusive*, never a sync failure.
+
+**Verdicts** are against the project's tolerance (default 20 ms): *pass* within it, *warn* within twice it, *fail* beyond;
+*inconclusive* when the data cannot say; *not applicable* when the recording lacks what the check needs (no neural data).
+Wording is "consistent with", never "verified". A check can carry a `note`, shown with it, for what its result does and
+does not mean.
+
+**Running.** On demand, off the main thread, because scanning a long video takes minutes the first time (the 3.4 GB video
+took about five minutes). Results are kept beside the other derived data, keyed by the project's checks and the
+sources' files, so they are shown on opening without running and are discarded if a file changes. Clicking a pair in the
+error plot moves the playhead there, to look at the moment in the other views.
+
+**Real recordings (DANDI 000231).** Video blackouts match trial boundaries at exactly 0 ms on all three sessions. That is
+perfect to the frame, which suggests the dataset's trial times were *defined from* the blackouts, so it shows the two
+were built consistently and is not independent evidence (the project's note says so). The independent evidence is the
+neural response to whisker contact: on the recording that has neural data, firing roughly doubles and peaks 15 ms after
+contact.
+

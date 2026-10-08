@@ -25,6 +25,7 @@ from syncviz_app.workspace import (
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.stall import StallGuard
+from syncviz_app.sync_diagnostics import SyncDiagnostics, SyncDiagnosticsWindow, SyncStatus
 from syncviz_app.timeline_bar import TimelineBar
 from syncviz_app.view_factory import create_view, fit_timeline, register_view, unique_title, unregister_view
 from syncviz_app.views_panel import ViewsPanel
@@ -38,6 +39,8 @@ class MainWindow(QMainWindow):
                  workspace: Workspace | None = None, workspace_dir=None, workspace_name: str = DEFAULT_NAME,
                  state_dir=None) -> None:
         super().__init__()
+        self.sync = SyncDiagnostics(self)                         # sync checks for the open collection
+        self._sync_window = None
         self.state_dir = state_dir                                # per-collection memory on disk; None = not kept
         self._memory: dict[str, dict] = {}                        # per-collection state while the app runs
         self.workspace_dir = workspace_dir                        # this project's workspaces folder; None = workspaces are off
@@ -100,12 +103,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.timeline_bar)
         self.setCentralWidget(central)
 
+        tools = self.menuBar().addMenu("&Tools")
+        tools.addAction("Sync diagnostics…", self.open_sync_diagnostics)
         self.workspace_menu = self.menuBar().addMenu("&Workspace")
         self.workspace_menu.aboutToShow.connect(self._fill_workspace_menu)
         self._fill_workspace_menu()
 
         self.views_panel = ViewsPanel(self)
         sidebar.addWidget(self.views_panel)
+        self.sync_status = SyncStatus(self)                       # always visible: how the sync checks stand
+        sidebar.addWidget(self.sync_status)
         sidebar.addWidget(self.info)
         sidebar.setStretchFactor(1, 1)
 
@@ -126,6 +133,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._apply_initial_sizes)
 
         self._restore_collection()
+        self.sync.load_cached()
 
         self._clock = QElapsedTimer()
         self._clock.start()
@@ -298,6 +306,7 @@ class MainWindow(QMainWindow):
         self._views_changed()
         self._restore_collection()
         self._set_title()
+        self.sync.load_cached()
         if self.collection_bar is not None:
             self.collection_bar.set_active(index)
         return True
@@ -336,6 +345,14 @@ class MainWindow(QMainWindow):
         only what is on screen; it is saved if and when the user saves."""
         self.apply_workspace(Workspace())
         self.statusBar().showMessage("Showing the project's defaults (save to keep them as this workspace)", 6000)
+
+    def open_sync_diagnostics(self) -> None:
+        """Show the synchronization diagnostics window (it stays open beside the main one)."""
+        if self._sync_window is None:
+            self._sync_window = SyncDiagnosticsWindow(self)
+        self._sync_window.show()
+        self._sync_window.raise_()
+        self._sync_window.activateWindow()
 
     def _fill_workspace_menu(self) -> None:
         from PySide6.QtGui import QAction, QActionGroup
@@ -471,5 +488,7 @@ class MainWindow(QMainWindow):
         self._pump_timer.stop()
         for view in self.views:
             view.close_view()
+        if self._sync_window is not None:
+            self._sync_window.close()
         self.context.resources.close()
         super().closeEvent(event)

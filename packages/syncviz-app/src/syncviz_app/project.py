@@ -16,12 +16,14 @@ import yaml
 
 import json
 
+import numpy as np
+
 from syncviz import plugins, processors
 from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
 from syncviz.catalog import Collection, discover, fill, has_unfilled
 from syncviz.sources import MissingDataError, Source
 
-_NON_CONSTRUCTOR_KEYS = {"type", "sync_signal"}
+_NON_CONSTRUCTOR_KEYS = {"type"}
 
 
 def split_ref(ref: str) -> tuple[str, str]:
@@ -81,6 +83,21 @@ class ResourceStore:
         source = self.source(name)
         return self._get(("ev", ref), lambda: source.read_events(path))
 
+    def event_streams(self, spec) -> list[EventSeries]:
+        """Event series named by a check's or processor's specification:
+
+          "session:units"                              every member of an event container
+          {from: "session:licks", member: left}        one member
+          {from: "session:intervals/trials", edge: start}   the starts (or stops) of an interval table
+        """
+        if isinstance(spec, str):
+            return list(self.events_of(spec).values())
+        if "edge" in spec:
+            table = self.intervals(spec["from"])
+            times = table.starts if spec["edge"] == "start" else table.stops
+            return [EventSeries(times=np.sort(times), name=f"{spec['from']}#{spec['edge']}")]
+        return [self.events(spec["from"], spec.get("member"))]
+
     def derived(self, spec: dict) -> TimeSeries:
         """A series computed by a processor from other resources, as the spec says:
 
@@ -125,6 +142,7 @@ class Project:
     active: int = 0
     sources: dict[str, Source] = field(init=False)
     resources: ResourceStore = field(init=False)
+    cache: object = None                         # a DiskCache, handed to the sources that can use one
 
     def __post_init__(self) -> None:
         self.sources = self.build_sources(self.collections[self.active])
@@ -170,6 +188,7 @@ class Project:
                     continue                                       # no such file for this collection
                 kwargs["path"] = path
             sources[name] = plugins.load("sources", spec["type"])(**kwargs)
+            sources[name].cache = self.cache
         return sources
 
     def _resolve_path(self, text: str, must_exist: bool) -> Path | None:
@@ -178,6 +197,12 @@ class Project:
             return Path(found[0]).resolve() if found else None
         path = (self.root / text).resolve()
         return path if (path.exists() or not must_exist) else None
+
+    def attach_cache(self, cache) -> None:
+        """Give the sources (now and for every collection opened later) the on-disk cache."""
+        self.cache = cache
+        for source in self.sources.values():
+            source.cache = cache
 
     def open_collection(self, index: int) -> ResourceStore:
         """The resources of another collection, ready to use. Nothing changes until `activate`."""

@@ -39,10 +39,20 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] Implement `candidates(catalog)` so it appears in **Add view**; keep its parameters in the series spec.
 - [ ] Test what it conserves (for example the total number of events) and that it cannot create what is not in the data.
 
+## Adding a sync check
+
+- [ ] Put what is generic in `syncviz.diagnostics` and what depends on a source in that source's plugin (events it provides,
+  or `Source.diagnostics()`); the core must not learn about any dataset.
+- [ ] Say what a pass means and does not mean (consistent with, not proof). If the result could be circular (a reference
+  derived from the thing tested), say so in the check's `note`.
+- [ ] A recording that lacks the data gives *not applicable*, a measurement that cannot judge gives *inconclusive*; only real
+  disagreement is *fail*. Test each, and test that a deliberately broken clock fails.
+
 ## Adding a source type
 
 - [ ] Entry point in group `syncviz.sources`; implement `describe()` and `catalog()` (so its data can be added from the UI).
 - [ ] Nothing source-specific in the core; it hands out generic resources only.
+- [ ] If it has checks about itself, return them from `diagnostics()` (see "Adding a sync check").
 - [ ] Anything that can be large (continuous signals) comes back as a `LazyTimeSeries` over the file, never loaded whole (§34.5); implement `close()` if the source keeps a file open.
 
 ## Before pushing
