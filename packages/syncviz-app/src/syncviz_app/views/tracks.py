@@ -5,10 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 
-from syncviz_app.views.rows import extent_of, load_row_data, row_candidates
+from syncviz.inspection import Target
+
+from syncviz_app.views.rows import extent_of, load_row_data, row_candidates, row_target
 from syncviz_app.views.timewindow import TimeWindowView
 
 TICK_HALF_HEIGHT = 0.35
+HOVER_PIXELS = 5            # how near the pointer must be to a tick to mean that event
 BAR_WIDTH_PX = 9
 
 
@@ -34,10 +37,33 @@ class TracksView(TimeWindowView):
             else:
                 item = self.plot.plot(pen=pg.mkPen(colour, width=BAR_WIDTH_PX, cap=pg.QtCore.Qt.PenCapStyle.FlatCap),
                                       connect="pairs")
-            self.rows.append({"name": row.get("name", ""), "kind": kind, "y": y, "data": data, "item": item})
+            self.rows.append({"name": row.get("name", ""), "kind": kind, "y": y, "data": data, "item": item, "spec": row})
         self.plot.setYRange(-0.7, n - 0.3, padding=0)
         self.plot.getAxis("left").setTicks([[(r["y"], r["name"]) for r in self.rows]])
         self.plot.getAxis("left").setWidth(110)
+        self.enable_hover(self.plot.viewport())
+
+    def target_at(self, pos):
+        """The row under the pointer; for an events row, the event itself when the pointer is within a few pixels of it."""
+        local = self.plot.viewport().mapFrom(self, pos)
+        viewbox = self.plot.getPlotItem().vb
+        scene = self.plot.mapToScene(local)
+        if not viewbox.sceneBoundingRect().contains(scene):
+            return None
+        at = viewbox.mapSceneToView(scene)
+        row = next((r for r in self.rows if abs(r["y"] - at.y()) <= 0.5), None)
+        if row is None:
+            return None
+        target = row_target(row["spec"])
+        if row["kind"] == "events" and len(row["data"]):
+            per_pixel = self.window_seconds / max(viewbox.sceneBoundingRect().width(), 1.0)
+            times = row["data"]
+            i = int(np.searchsorted(times, at.x()))
+            near = [times[j] for j in (i - 1, i) if 0 <= j < len(times)]
+            best = min(near, key=lambda t: abs(t - at.x()), default=None)
+            if best is not None and abs(best - at.x()) <= HOVER_PIXELS * per_pixel:
+                target = Target(target.source, target.path, target.kind, target.member, target.label, float(best))
+        return target
 
     def extent(self):
         return extent_of((row["kind"], row["data"]) for row in self.rows)

@@ -6,6 +6,8 @@ import numpy as np
 import pyqtgraph as pg
 
 from syncviz import processors
+from syncviz.inspection import Target
+from syncviz_app.project import split_ref
 from syncviz_app.views.base import Candidate
 from syncviz_app.views.timewindow import TimeWindowView, break_at_gaps
 
@@ -40,6 +42,12 @@ class TimeSeriesView(TimeWindowView):
             self.series = context.resources.derived(series_spec)
         else:
             self.series = context.resources.timeseries(series_spec["from"], series_spec.get("member"))
+        self.target = None
+        if "from" in series_spec:
+            source, path = split_ref(series_spec["from"])
+            member = series_spec.get("member")
+            self.target = Target(source, path, "timeseries", member, self.title)
+            self.enable_hover(self.plot.viewport())
         self.curve = self.plot.plot(pen=pg.mkPen("#4fa3e0", width=1.5), connect="finite")
         if self.series.unit:
             self.plot.setLabel("left", self.series.unit)
@@ -50,6 +58,9 @@ class TimeSeriesView(TimeWindowView):
             lo, hi = np.percentile(finite, [0.5, 99.5])
             pad = (hi - lo) * 0.1 or 1.0
             self.plot.setYRange(lo - pad, hi + pad, padding=0)
+
+    def target_at(self, pos):
+        return self.target
 
     def extent(self):
         if len(self.series) == 0:

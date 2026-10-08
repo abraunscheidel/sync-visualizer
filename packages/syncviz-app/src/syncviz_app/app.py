@@ -7,6 +7,7 @@ from pathlib import Path
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL, Shifted
+from syncviz_app.inspector import Inspector
 from syncviz_app.context import AppContext
 from syncviz_app.workspace import DEFAULT_NAME, workspaces_dir, load_workspace
 from syncviz_app.main_window import MainWindow
@@ -36,6 +37,8 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     context = AppContext(bus=bus, timeline=timeline, resources=project.resources, cache=cache,
                          collection=project.collection, collection_label=project.collection_label,
                          glossary={str(k): str(v) for k, v in (project.config.get("glossary") or {}).items()})
+
+    context.inspector = Inspector(context)
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():

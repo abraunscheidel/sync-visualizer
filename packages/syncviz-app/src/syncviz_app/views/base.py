@@ -7,10 +7,12 @@ playhead has moved.
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QEvent, QPoint
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from dataclasses import dataclass
 
+from syncviz.inspection import Target
 from syncviz.sources import DataEntry
 from syncviz_app.context import AppContext
 
@@ -85,6 +87,31 @@ class View(QWidget):
         """The views of this type that the available data (by source name) could feed. Types that
         return nothing can only be added through the project file."""
         return []
+
+    def target_at(self, pos: QPoint) -> Target | None:
+        """What is under `pos` (in this view's own coordinates), or None. A view only says what it points at; the facts
+        about it come from the inspector (design doc 28.7). Views that show data override this."""
+        return None
+
+    def enable_hover(self, *widgets: QWidget) -> None:
+        """Show the inspector's tooltip for what is under the pointer in these child widgets."""
+        for widget in widgets:
+            widget.installEventFilter(self)
+
+    def hover_text(self, pos: QPoint) -> str:
+        inspector = self.context.inspector
+        target = self.target_at(pos) if inspector is not None else None
+        return "" if target is None else inspector.hover_text(target)
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            text = self.hover_text(self.mapFromGlobal(event.globalPos()))
+            if text:
+                QToolTip.showText(event.globalPos(), text, obj)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().eventFilter(obj, event)
 
     def extent(self) -> tuple[float, float] | None:
         """Range of shared time this view has data for, or None if it has no time extent."""

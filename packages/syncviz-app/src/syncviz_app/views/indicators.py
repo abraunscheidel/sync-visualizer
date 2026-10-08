@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz_app.views.base import View
 from syncviz_app.views.rows import (
-    extent_of, glow_after_events, glow_during_intervals, load_row_data, row_candidates,
+    extent_of, glow_after_events, glow_during_intervals, load_row_data, row_candidates, row_target,
 )
 
 DEFAULT_DECAY_S = 0.15
@@ -112,11 +112,19 @@ class IndicatorsView(View):
             raise ValueError("decay must be positive")
         self.rows = []
         for row in spec["rows"]:
-            self.rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": load_row_data(context, row)})
+            self.rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": load_row_data(context, row), "spec": row})
         self.lamps = _Lamps([r["name"] for r in self.rows], spec.get("columns"))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.lamps)
+        self.enable_hover(self.lamps)
+
+    def target_at(self, pos):
+        point = self.lamps.mapFrom(self, pos)
+        for rect, row in zip(self.lamps.tile_rects(), self.rows):
+            if rect.contains(point.x(), point.y()):
+                return row_target(row["spec"])
+        return None
 
     def extent(self):
         return extent_of((r["kind"], r["data"]) for r in self.rows)

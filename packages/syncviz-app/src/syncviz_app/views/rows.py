@@ -10,7 +10,9 @@ from typing import Iterable
 
 import numpy as np
 
+from syncviz.inspection import Target
 from syncviz.sources import DataEntry
+from syncviz_app.project import split_ref
 from syncviz_app.views.base import Candidate
 
 
@@ -23,6 +25,12 @@ def load_row_data(context, row: dict):
         iv = context.resources.intervals(row["from"])
         return iv.starts, iv.stops
     raise ValueError(f"row {row.get('name')!r}: kind must be 'events' or 'intervals', got {kind!r}")
+
+
+def row_target(row: dict) -> Target:
+    """What a row points at: its data item, named by where it lives."""
+    source, path = split_ref(row["from"])
+    return Target(source, path, row["kind"], row.get("member"), row.get("name", ""))
 
 
 def extent_of(rows: Iterable[tuple[str, object]]) -> tuple[float, float] | None:
