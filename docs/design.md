@@ -1156,6 +1156,54 @@ For example, a neural recording sampled at 30 kHz across 64 channels represents 
 
 Interactive controls should therefore not repeatedly process the entire recording.
 
+### 34.1 Video access
+
+Videos are multi-GB and are never loaded whole. Decoded frames for the whole
+session would be orders of magnitude larger than memory (about 137 GB for
+391,200 grayscale frames at 640x550).
+
+- **Frames are identified by index, not by container time.** Some scientific
+  videos carry meaningless timestamps (DANDI 000231 stores 200 fps video with
+  30 fps-style timestamps and a container duration of 13,040 s). The frame rate
+  comes from configuration or dataset metadata.
+- **Frame index.** Built once from packet headers without decoding, then cached.
+  It records each frame's presentation order and which frames are keyframes.
+- **Random access.** To reach frame N, seek to the latest keyframe at or before N
+  and decode forward. Only that group of pictures is read from disk.
+- **Bounded memory.** Callers receive only the frames they ask for. A
+  byte-bounded cache around the playhead and background prefetch are planned.
+- **Interface.** A `Video` resource exposes frame count, rate and frame reads.
+  Views never see the container, the codec, or where the bytes live.
+
+Measured on DANDI 000231 (sub-219CR, 2019-04-04, 2.7 GB MKV, h264 with B-frames),
+while another full-video decode was running on the same machine:
+
+| Measurement | Result |
+| --- | --- |
+| Frame index build | 5.6 s, 391,200 frames (matches the full decode exactly) |
+| Keyframe spacing | mean 179 frames, median 187, max 250 |
+| Random access to one frame | median 68 ms, p95 124 ms, max 128 ms |
+| Sequential decode | about 212 frames/s |
+| Content check | frame N read by seek matches frame N from the full decode, on 48 frames including blackout boundaries |
+
+Sequential decode at about 212 frames/s is close to the 200 frames/s needed for
+real-time playback of this recording, so playback will need prefetching or a
+lower-resolution proxy. This was measured under CPU contention and should be
+repeated on an idle machine.
+
+**Remote video (future).** Not needed yet, but the design should not rule it out:
+
+- Local files are one implementation of a byte-access interface. A remote
+  implementation would use HTTP range requests with an on-disk block cache.
+- The frame index is the difficulty. In MKV, packet headers are interleaved with
+  the data, so building the index over a network can mean reading the whole file.
+  MP4 stores a complete frame table in one small block and does not have this
+  problem.
+- Options when remote support is added: a one-time MP4 proxy with the table at
+  the start, or a precomputed index published beside the video.
+- To keep this open, the frame index and the frame reader must not assume that a
+  local file path exists beyond the point where they are opened.
+
 ---
 
 ## 35. Technology
