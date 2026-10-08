@@ -2228,3 +2228,12 @@ A name on screen should say what it is and how to read it. Two sources feed one 
 
 Shown today as tooltips on the segment filters, on the Add view dialog's entries, and on the overlay switches and groups in the Views
 list. The longer, dataset-wide reference is in `docs/datasets/`.
+
+### 28.7 Parked idea: choosing what a hover shows
+
+Not built; recorded so it is not lost, and it may turn out not to be needed. The description in a tooltip (section 28.6) says what a
+thing is and should stay as it is. What a user may want to choose is the *statistics* shown on hover: figures that are not worth
+permanent space on screen but helpful at a glance (for a spike unit: its rate, layer and depth; for a lick row: how many in the
+session). Sketch: each kind of row offers a list of available stats, the user ticks the ones that appear on hover, and the choice
+is saved in the workspace like the other display settings (so the checklist item for new controls applies). It overlaps with the
+unit-details discussion (what a click shows, and whether the user controls it), so decide the two together.
