@@ -1183,13 +1183,39 @@ while another full-video decode was running on the same machine:
 | Frame index build | 5.6 s, 391,200 frames (matches the full decode exactly) |
 | Keyframe spacing | mean 179 frames, median 187, max 250 |
 | Random access to one frame | median 68 ms, p95 124 ms, max 128 ms |
-| Sequential decode | about 212 frames/s |
+| Sequential decode, converting each frame to gray | about 172-212 frames/s |
+| Sequential decode, reading the luma plane directly | about 1,450-1,580 frames/s |
+| Raw decode only (8 cores) | about 1,600-2,000 frames/s |
+| Conversion to RGB (what a display needs) | about 380 frames/s |
 | Content check | frame N read by seek matches frame N from the full decode, on 48 frames including blackout boundaries |
 
-Sequential decode at about 212 frames/s is close to the 200 frames/s needed for
-real-time playback of this recording, so playback will need prefetching or a
-lower-resolution proxy. This was measured under CPU contention and should be
-repeated on an idle machine.
+Raw decoding is not the bottleneck. The per-frame format conversion was: it ran
+about 9x slower than decoding because it is a single-threaded step on every
+frame. For 8-bit YUV video the first plane already is the grayscale image, so the
+reader and the brightness scan use it directly. A full-session brightness scan
+dropped from about 23 minutes to about 4, with identical results (230 blackouts
+starting on the same frames). All timings were measured while another decode was
+running, so an idle machine should do better.
+
+**Pixel values.** The luma plane keeps the encoded values. For this video black is
+16.0 and normal frames are about 129 (video range, black near 16 and white near
+235), not 0-255. Formats whose first plane is not 8-bit brightness (RGB or planar
+RGB, 10/12/16-bit YUV) fall back to a conversion that returns full range. The two
+paths are therefore not numerically comparable, and `has_native_luma` reports
+which one applies. Planned: rescale native luma to full range with a lookup table
+so all frames mean the same thing across videos; and request real color channels
+explicitly where they matter (a colored sync LED, display).
+
+**Proxy video (optional, off by default).** Not needed for this recording. If added:
+- Two kinds solve different problems. A same-resolution all-keyframe proxy fixes
+  slow seeking without losing image quality, at a large disk cost. A
+  lower-resolution proxy fixes slow decoding and playback, at a cost in quality.
+- A proxy is for navigation only: scrubbing and playing use it, and a resting
+  playhead shows the original frame at full resolution. Whisker-scale detail is
+  lost by downscaling, so quality-critical videos should not default to one.
+- Analyses (detection, tracking, pose estimation) never read a proxy.
+- Whether a proxy is worthwhile is decided by measurement: time a short decode on
+  import and compare it with the video's frame rate.
 
 **Remote video (future).** Not needed yet, but the design should not rule it out:
 

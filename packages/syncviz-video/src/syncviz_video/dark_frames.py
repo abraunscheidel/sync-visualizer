@@ -64,7 +64,7 @@ class DarkFrameDetector:
 
         if cache is not None:
             brightness = cache.get_or_compute(
-                video_path, "brightness", compute, params={"stride": self.stride}
+                video_path, "brightness", compute, params={"stride": self.stride, "pixels": "luma"}
             )
         else:
             brightness = compute()

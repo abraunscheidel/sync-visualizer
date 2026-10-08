@@ -14,10 +14,15 @@ import av
 import numpy as np
 
 from syncviz_video.frame_index import FrameIndex
+from syncviz_video.frames import luma
 
 
 class FrameReader:
-    """Reads grayscale frames by frame number. Not thread-safe: one reader per thread."""
+    """Reads luma (brightness) frames by frame number. Not thread-safe: one reader per thread.
+
+    Returned arrays are copies, so they stay valid after the reader moves on. See
+    frames.luma for the value convention.
+    """
 
     def __init__(self, path: str | Path, index: FrameIndex) -> None:
         self.path = Path(path)
@@ -65,7 +70,7 @@ class FrameReader:
                 break
             if n != expected:
                 raise RuntimeError(f"decoder skipped from frame {expected} to {n}")
-            yield n, frame.to_ndarray(format="gray")
+            yield n, luma(frame).copy()
             expected += 1
         if expected != stop:
             raise RuntimeError(f"stream ended at frame {expected}, expected {stop}")

@@ -42,8 +42,13 @@ def reader(video):
         yield r
 
 
+def expected_luma(level: int) -> float:
+    """Encoding full-range gray as video yuv420p maps 0-255 onto luma 16-235."""
+    return 16 + level * 219 / 255
+
+
 def assert_is_frame(image, i):
-    assert abs(float(image.mean()) - level_of(i)) < 4, f"frame {i} has wrong content"
+    assert abs(float(image.mean()) - expected_luma(level_of(i))) < 4, f"frame {i} has wrong content"
 
 
 def test_index_counts_every_frame_and_starts_at_a_keyframe(video):
@@ -101,3 +106,38 @@ def test_duplicate_timestamps_rejected():
 
     with pytest.raises(ValueError, match="duplicate"):
         FrameIndex.from_packet_table(table)
+
+
+def test_luma_falls_back_when_first_plane_is_not_brightness(tmp_path):
+    """Planar RGB stores green in plane 0. Reading it as luma would be silently wrong."""
+    from syncviz_video.frames import has_native_luma, luma
+
+    path = tmp_path / "rgb.mkv"
+    try:
+        with av.open(str(path), "w") as container:
+            stream = container.add_stream("libx264rgb", rate=30)
+            stream.width, stream.height = 64, 48
+            stream.pix_fmt = "rgb24"
+            stream.options = {"crf": "0"}
+            red = np.zeros((48, 64, 3), dtype=np.uint8)
+            red[..., 0] = 255                       # pure red: green plane is 0, true luma is ~76
+            for _ in range(5):
+                for packet in stream.encode(av.VideoFrame.from_ndarray(red, format="rgb24")):
+                    container.mux(packet)
+            for packet in stream.encode():
+                container.mux(packet)
+    except Exception as exc:                        # encoder not available in this PyAV build
+        pytest.skip(f"libx264rgb unavailable: {exc}")
+
+    with av.open(str(path)) as container:
+        frame = next(container.decode(container.streams.video[0]))
+        assert not has_native_luma(frame)
+        assert abs(float(luma(frame).mean()) - 76) < 6
+
+
+def test_native_luma_is_used_for_yuv420p(video):
+    from syncviz_video.frames import has_native_luma
+
+    with av.open(str(video)) as container:
+        frame = next(container.decode(container.streams.video[0]))
+    assert frame.format.name == "yuv420p" and has_native_luma(frame)
