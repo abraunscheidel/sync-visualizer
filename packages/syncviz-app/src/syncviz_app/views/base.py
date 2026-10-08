@@ -15,6 +15,17 @@ from syncviz.sources import DataEntry
 from syncviz_app.context import AppContext
 
 
+def describe_delay(milliseconds: float, sentence: bool = False) -> str:
+    """A view's display delay in words, so nobody has to remember which way a sign points.
+    Positive means delayed (the view runs behind the playhead), negative means ahead of it."""
+    if not milliseconds:
+        return "No delay" if sentence else ""
+    amount = f"{abs(milliseconds):g} ms"
+    if sentence:
+        return f"This view runs {amount} " + ("behind the playhead." if milliseconds > 0 else "ahead of the playhead.")
+    return f"delayed {amount}" if milliseconds > 0 else f"ahead {amount}"
+
+
 @dataclass
 class Candidate:
     """A view the user could add: what to call it in the dialog, and the spec that creates it."""
@@ -34,7 +45,8 @@ class View(QWidget):
         self.spec = spec
         self.title: str = spec.get("title") or self.type_name
         # Upper limit on how often this view redraws. A project can override it per view.
-        # Display lag in seconds: a view that runs `lag` behind shows what the playhead showed `lag` ago (negative = ahead).
+        # Display delay in seconds (`lag`): positive means delayed, so the view shows what the playhead showed `lag` ago;
+        # negative means ahead. See describe_delay.
         # It changes only what this view draws, never the data or the timeline.
         self.lag: float = 0.0
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))

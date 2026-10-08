@@ -108,9 +108,9 @@ def test_a_shifted_panel_says_so_in_its_title_and_a_plain_one_does_not(window):
     dock = window.docks[window.views.index(angle)]
     assert dock.windowTitle() == "Angle"
     window.set_view_lag(angle, 15.0)
-    assert "+15 ms" in dock.windowTitle()
+    assert dock.windowTitle() == "Angle   [delayed 15 ms]"
     window.set_view_lag(angle, -2.5)
-    assert "-2.5 ms" in dock.windowTitle()
+    assert dock.windowTitle() == "Angle   [ahead 2.5 ms]"
     window.set_view_lag(angle, 0.0)
     assert dock.windowTitle() == "Angle"
 
@@ -138,13 +138,38 @@ def test_the_field_shows_and_sets_the_selected_views_shift_and_reset_clears_it(w
     assert _view(window, "Angle").lag == 0.0 and panel.lag_spin.value() == 0.0
 
 
+def test_the_delay_is_described_in_words_so_the_sign_never_has_to_be_remembered(window):
+    from syncviz_app.views.base import describe_delay
+
+    assert describe_delay(15.0) == "delayed 15 ms" and describe_delay(-15.0) == "ahead 15 ms" and describe_delay(0.0) == ""
+    assert describe_delay(15.0, sentence=True) == "This view runs 15 ms behind the playhead."
+    assert describe_delay(-2.5, sentence=True) == "This view runs 2.5 ms ahead of the playhead."
+    assert describe_delay(0.0, sentence=True) == "No delay"
+    panel = _select(window, "Angle")
+    assert panel.lag_words.text() == "No delay"
+    panel.lag_spin.setValue(15.0)
+    assert "15 ms behind" in panel.lag_words.text()
+    panel.lag_spin.setValue(-15.0)
+    assert "15 ms ahead" in panel.lag_words.text()
+    panel.list.setCurrentRow(-1)
+    assert panel.lag_words.text() == ""
+
+
+def test_a_positive_delay_makes_the_view_show_the_earlier_moment(window):
+    video = _view(window, "Clip")
+    window.context.bus.publish(Seek(3.0))
+    window.set_view_lag(video, 100.0)
+    window.refresh_now()
+    assert video._wanted < round(3.0 * FPS)              # delayed: it shows what the playhead showed before
+
+
 def test_the_field_is_off_with_nothing_selected(window):
     panel = window.views_panel
     panel.list.setCurrentRow(-1)
     assert not panel.lag_spin.isEnabled() and not panel.lag_reset.isEnabled()
 
 
-def test_the_time_shift_field_is_marked_for_the_workspace(window):
+def test_the_delay_field_is_marked_for_the_workspace(window):
     assert window.views_panel.lag_spin.property("workspace") == "saved"
 
 
@@ -157,7 +182,7 @@ def test_shifts_are_saved_in_the_workspace_and_come_back(window, qapp):
     try:
         assert _view(again, "Angle").lag == pytest.approx(0.015) and _view(again, "Clip").lag == pytest.approx(-0.040)
         assert _view(again, "Events").lag == 0.0
-        assert "+15 ms" in again.docks[again.views.index(_view(again, "Angle"))].windowTitle()
+        assert "delayed 15 ms" in again.docks[again.views.index(_view(again, "Angle"))].windowTitle()
     finally:
         again.close()
 

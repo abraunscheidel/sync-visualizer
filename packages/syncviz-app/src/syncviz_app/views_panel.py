@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from syncviz_app.controls import saved_in_workspace
+from syncviz_app.views.base import describe_delay
 
 
 def _swatch(colour: str) -> QIcon:
@@ -42,7 +43,7 @@ class ViewsPanel(QWidget):
         row.addWidget(self.remove_button)
         layout.addLayout(row)
         shift_row = QHBoxLayout()
-        shift_row.addWidget(QLabel("Time shift"))
+        shift_row.addWidget(QLabel("Delay"))
         self.lag_spin = saved_in_workspace(QDoubleSpinBox())
         self.lag_spin.setRange(-10000.0, 10000.0)
         self.lag_spin.setDecimals(1)
@@ -50,14 +51,18 @@ class ViewsPanel(QWidget):
         self.lag_spin.setSuffix(" ms")
         self.lag_spin.setToolTip(
             "Only changes what the selected view draws, to line things up by eye; the data is untouched.\n"
-            "Positive: the view runs behind the playhead (shows what happened that long ago).\n"
-            "Negative: it runs ahead (shows what is about to happen)."
+            "Positive: the view is delayed, so it runs behind the playhead (shows what happened that long ago).\n"
+            "Negative: it runs ahead of the playhead (shows what is about to happen)."
         )
         self.lag_reset = QPushButton("Reset")
-        self.lag_reset.setToolTip("Remove the shift from the selected view")
+        self.lag_reset.setToolTip("Remove the delay from the selected view")
         shift_row.addWidget(self.lag_spin, 1)
         shift_row.addWidget(self.lag_reset)
         layout.addLayout(shift_row)
+        self.lag_words = QLabel()
+        self.lag_words.setWordWrap(True)
+        self.lag_words.setEnabled(False)                       # a quiet explanation, not a control
+        layout.addWidget(self.lag_words)
         self.lag_spin.valueChanged.connect(self._lag_edited)
         self.lag_spin.editingFinished.connect(self.lag_spin.clearFocus)       # keep the keyboard shortcuts working
         self.lag_reset.clicked.connect(lambda: self.lag_spin.setValue(0.0))
@@ -120,11 +125,16 @@ class ViewsPanel(QWidget):
         self.lag_spin.blockSignals(True)
         self.lag_spin.setValue(0.0 if view is None else view.lag * 1000.0)
         self.lag_spin.blockSignals(False)
+        self._describe()
+
+    def _describe(self) -> None:
+        self.lag_words.setText("" if self._selected_view() is None else describe_delay(self.lag_spin.value(), sentence=True))
 
     def _lag_edited(self, milliseconds: float) -> None:
         view = self._selected_view()
         if view is not None:
             self.window.set_view_lag(view, milliseconds)
+        self._describe()
 
     # -- actions -------------------------------------------------------------------------
     def _dock_of(self, item):

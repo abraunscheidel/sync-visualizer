@@ -28,7 +28,7 @@ from syncviz_app.stall import StallGuard
 from syncviz_app.timeline_bar import TimelineBar
 from syncviz_app.view_factory import create_view, fit_timeline, register_view, unique_title, unregister_view
 from syncviz_app.views_panel import ViewsPanel
-from syncviz_app.views.base import View
+from syncviz_app.views.base import View, describe_delay
 
 PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so this only sets its granularity
 
@@ -161,7 +161,7 @@ class MainWindow(QMainWindow):
         return out
 
     def set_view_lag(self, view: View, milliseconds: float) -> None:
-        """Shift one view's display by `milliseconds` (positive: it runs behind the playhead). Display only."""
+        """Delay one view's display by `milliseconds` (negative: ahead). Display only."""
         if milliseconds:
             self._lags[view.title] = float(milliseconds)
         else:
@@ -174,8 +174,8 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _dock_title(view: View) -> str:
-        ms = view.lag * 1000.0
-        return view.title if not ms else f"{view.title}   [{ms:+g} ms]"
+        words = describe_delay(view.lag * 1000.0)
+        return f"{view.title}   [{words}]" if words else view.title
 
     def _apply_lags(self, lags: dict[str, float]) -> None:
         """Give every view the lag in `lags` (by title), and the rest the lag their project file gives (lag_ms), else none."""

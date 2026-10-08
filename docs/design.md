@@ -2072,19 +2072,23 @@ Open questions for step 3:
   and easy to clear.
 * Event filters are working settings, so they belong in the workspace (see docs/checklists.md).
 
-### 28.5 Display lag
+### 28.5 Display delay
 
-A view can be shifted in time for exploring: `View.lag` (seconds) makes it draw the moment `lag` before the playhead (a
-positive lag means it runs behind; a negative one, ahead). It is a lens, not a correction: it changes only what that view
-draws. The data, the extents and coverage on the timeline strip, the segments and the other views stay at true times.
-Sync correction (the claim that a source's clock is off) is a different thing: it is a fact about a recording, belongs to
-the source and the collection, and should reuse the time-mapping machinery rather than this.
+A view can be delayed for exploring: `View.lag` (seconds) makes it draw the moment `lag` before the playhead. **Positive
+means delayed** (the view runs behind the playhead); negative means it runs ahead. This matches the time-mapping maths
+(`shared = offset + native`: a positive offset makes events appear later), so a delay that proves useful could become a
+real sync correction with the same number. The interface always says it in words, so nobody has to remember the sign:
+"This view runs 15 ms behind the playhead.", and a panel's title carries `[delayed 15 ms]` or `[ahead 15 ms]`.
+
+It is a lens, not a correction: it changes only what that view draws. The data, the extents and coverage on the timeline
+strip, the segments and the other views stay at true times. Sync correction (the claim that a source's clock is off) is a
+different thing: it is a fact about a recording, belongs to the source and the collection, and reuses the time-mapping
+machinery instead of this.
 
 * **Where:** `RefreshScheduler` hands each view `playhead - lag`. Clicking in a plot adds the lag back, so it seeks the
   playhead, not the view's own time. Stepping by the view's grid goes through `Shifted`, which moves its ticks by the lag.
-* **Set from:** the "Time shift" field under the Views list (milliseconds, for the selected view), or `lag_ms:` in a view's
+* **Set from:** the "Delay" field under the Views list (milliseconds, for the selected view), or `lag_ms:` in a view's
   specification as its starting value. It is saved in the workspace by view title, and "Reset to the project's
   defaults" returns each view to its `lag_ms`.
-* **Never hidden:** a shifted panel's title carries its shift, for example `Units   [+15 ms]`.
 * **Caution:** aligning by eye can look convincing and still be wrong. A measured latency (for example the event-aligned
-  firing rate) is the number to trust; the lag only helps to see it.
+  firing rate) is the number to trust; the delay only helps to see it.
