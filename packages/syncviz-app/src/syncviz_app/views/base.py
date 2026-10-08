@@ -40,6 +40,7 @@ class ViewSetting:
     kind: str
     value: object
     choices: list[tuple[str, object]] | None = None
+    group: str | None = None            # toggles that share a group are shown together under one switch for the whole group
 
 
 @dataclass

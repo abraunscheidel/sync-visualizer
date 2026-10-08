@@ -89,6 +89,7 @@ class _FrameWidget(QWidget):
         self._message = ""
         self._cue = ""
         self.layers: list = []                # drawn over the picture (see overlays.py)
+        self.layers_visible = True            # one switch for all of them
         self._placeholder_mix = 0.0           # 0 = frame fully shown, 1 = placeholder fully shown
         self._target_mix = 0.0
         self._timer = QTimer(self)
@@ -134,7 +135,7 @@ class _FrameWidget(QWidget):
             target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
             p.setOpacity(1.0 - self._placeholder_mix)
             p.drawImage(target, self._image)
-            for layer in self.layers:
+            for layer in self.layers if self.layers_visible else []:
                 layer.paint(p, target, (iw, ih))
             p.setOpacity(1.0)
         if self._placeholder_mix > 0.0 or self._image is None:
@@ -214,7 +215,7 @@ class VideoView(View):
             stored = first.metadata.get("conversion", 1.0)
             # Pixels per stored unit: the project can say how many units make a pixel; otherwise undo the file's conversion.
             scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0 / stored
-            lines.append({"name": spec.get("name", ""), "times": times, "scale": scale, "color": QColor(spec["color"]) if "color" in spec else palette(colour_index),
+            lines.append({"name": spec.get("name", ""), "group": spec.get("group"), "times": times, "scale": scale, "color": QColor(spec["color"]) if "color" in spec else palette(colour_index),
                           "max_gap": 1.5 * float(np.median(np.diff(times))) if len(times) > 2 else 0.01,
                           **{key: np.asarray(s.values, float) for key, s in series.items()}})
             colour_index += 1
@@ -230,7 +231,7 @@ class VideoView(View):
             for line in lines:                       # `color_of: Whisker C0` draws the ring in that line's colour
                 if line["name"] == spec.get("color_of"):
                     colour = line["color"]
-            markers.append({"name": spec.get("name", ""), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
+            markers.append({"name": spec.get("name", ""), "group": spec.get("group"), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
                             "y": np.asarray(y, float), "scale": scale, "color": colour})
             colour_index += 1
         self._track_defaults = set(overlay.get("hidden", []))
@@ -251,7 +252,7 @@ class VideoView(View):
             except MissingDataError as exc:
                 context.notes.append(f"video overlay row {row.get('name', '')!r} left out: {exc}")
                 continue
-            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data})
+            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data, "group": row.get("group")})
         self._badge_defaults = {"corner": overlay.get("corner", DEFAULT_CORNER), "hidden": set(overlay.get("hidden", []))}
         self.badges = CornerBadges(rows, self._badge_defaults["corner"], float(overlay.get("decay", DEFAULT_DECAY_S)),
                                    self._badge_defaults["hidden"])
@@ -268,19 +269,26 @@ class VideoView(View):
 
     # -- settings, shown under the Views list --------------------------------------------------
     def settings(self) -> list[ViewSetting]:
-        out = []
+        if not self.widget.layers:
+            return []
+        out = [ViewSetting("overlay.enabled", "Show overlays", "toggle", self.widget.layers_visible)]
         if self.badges is not None and self.badges.rows:
             labels = {OFF: "Off", **{c: c.replace("-", " ").capitalize() for c in CORNERS}}
             out.append(ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
                                    [(labels[c], c) for c in (OFF, *CORNERS)]))
-            out += [ViewSetting(f"overlay.show.{name}", name, "toggle", name not in self.badges.hidden) for name in self.badges.names]
+            out += [ViewSetting(f"overlay.show.{row['name']}", row["name"], "toggle", row["name"] not in self.badges.hidden,
+                                group=row.get("group")) for row in self.badges.rows]
         for layer in (self.lines, self.markers):                    # what is drawn in the picture itself
             if layer is not None:
-                out += [ViewSetting(f"overlay.track.{name}", f"Draw {name}", "toggle", name not in layer.hidden) for name in layer.names]
+                out += [ViewSetting(f"overlay.track.{item['name']}", f"Draw {item['name']}", "toggle", item["name"] not in layer.hidden,
+                                    group=item.get("group")) for item in layer.items]
         return out
 
     def apply_setting(self, key: str, value) -> None:
-        if key == "overlay.corner" and self.badges is not None:
+        if key == "overlay.enabled":
+            self.widget.layers_visible = bool(value)
+            self.widget.update()
+        elif key == "overlay.corner" and self.badges is not None:
             self.badges.set_corner(value)
         elif key.startswith("overlay.show.") and self.badges is not None:
             name = key[len("overlay.show."):]
@@ -297,6 +305,7 @@ class VideoView(View):
         self._update_layers()
 
     def reset_settings(self) -> None:
+        self.widget.layers_visible = True
         if self.badges is not None:
             self.badges.set_corner(self._badge_defaults["corner"])
             self.badges.set_hidden(self._badge_defaults["hidden"])

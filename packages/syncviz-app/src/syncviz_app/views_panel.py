@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
-from syncviz_app.controls import saved_in_workspace
+from syncviz_app.controls import not_saved, saved_in_workspace
 from syncviz_app.views.base import describe_delay
 
 
@@ -144,25 +144,69 @@ class ViewsPanel(QWidget):
         heading = QLabel("Settings")
         heading.setStyleSheet("font-weight: 600;")
         self.settings_layout.addWidget(heading)
+        done_groups: set[str] = set()
         for setting in settings:
             if setting.kind == "choice":
-                row = QHBoxLayout()
-                box = saved_in_workspace(QComboBox())
-                for label, value in setting.choices:
-                    box.addItem(label, value)
-                box.setCurrentIndex(max(box.findData(setting.value), 0))
-                box.currentIndexChanged.connect(lambda _i, b=box, k=setting.key: self.window.set_view_setting(self._selected_view(), k, b.currentData()))
-                row.addWidget(QLabel(setting.label))
-                row.addWidget(box, 1)
-                holder = QWidget()
-                holder.setLayout(row)
-                row.setContentsMargins(0, 0, 0, 0)
-                self.settings_layout.addWidget(holder)
-            else:
-                check = saved_in_workspace(QCheckBox(setting.label))
-                check.setChecked(bool(setting.value))
-                check.toggled.connect(lambda on, k=setting.key: self.window.set_view_setting(self._selected_view(), k, on))
-                self.settings_layout.addWidget(check)
+                self._add_choice(setting)
+            elif setting.group is None:
+                self._add_toggle(setting, self.settings_layout)
+            elif setting.group not in done_groups:
+                done_groups.add(setting.group)
+                self._add_group(setting.group, [s for s in settings if s.group == setting.group])
+
+    def _add_choice(self, setting) -> None:
+        row = QHBoxLayout()
+        box = saved_in_workspace(QComboBox())
+        for label, value in setting.choices:
+            box.addItem(label, value)
+        box.setCurrentIndex(max(box.findData(setting.value), 0))
+        box.currentIndexChanged.connect(lambda _i, b=box, k=setting.key: self.window.set_view_setting(self._selected_view(), k, b.currentData()))
+        row.addWidget(QLabel(setting.label))
+        row.addWidget(box, 1)
+        holder = QWidget()
+        holder.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.settings_layout.addWidget(holder)
+
+    def _add_toggle(self, setting, parent_layout) -> QCheckBox:
+        check = saved_in_workspace(QCheckBox(setting.label))
+        check.setChecked(bool(setting.value))
+        check.toggled.connect(lambda on, k=setting.key: self.window.set_view_setting(self._selected_view(), k, on))
+        parent_layout.addWidget(check)
+        return check
+
+    def _add_group(self, name: str, members: list) -> None:
+        """One switch for a group of toggles, above the toggles themselves. It shows a partial state when only some are on,
+        and is worked out from them: only the individual switches are saved."""
+        box = not_saved(QCheckBox(name), "worked out from the switches inside it, which are what is saved")
+        box.setTristate(True)
+        box.setStyleSheet("font-weight: 600;")
+        self.settings_layout.addWidget(box)
+        inner = QVBoxLayout()
+        inner.setContentsMargins(18, 0, 0, 0)
+        children = [self._add_toggle(member, inner) for member in members]
+        holder = QWidget()
+        holder.setLayout(inner)
+        self.settings_layout.addWidget(holder)
+
+        def refresh_group() -> None:
+            on = sum(c.isChecked() for c in children)
+            box.blockSignals(True)
+            box.setCheckState(Qt.CheckState.Checked if on == len(children) else
+                              Qt.CheckState.Unchecked if on == 0 else Qt.CheckState.PartiallyChecked)
+            box.blockSignals(False)
+
+        def clicked() -> None:
+            turn_on = not all(c.isChecked() for c in children)             # anything but all-on turns everything on
+            for child in children:
+                if child.isChecked() != turn_on:
+                    child.setChecked(turn_on)                              # each child saves itself
+            refresh_group()
+
+        for child in children:
+            child.toggled.connect(lambda _on: refresh_group())
+        box.clicked.connect(clicked)
+        refresh_group()
 
     def _describe(self) -> None:
         self.lag_words.setText("" if self._selected_view() is None else describe_delay(self.lag_spin.value(), sentence=True))

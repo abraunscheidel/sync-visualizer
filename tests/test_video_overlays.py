@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox
 from pynwb import NWBFile, NWBHDF5IO
@@ -213,11 +213,12 @@ def test_a_badge_is_really_drawn_on_the_picture_when_its_event_is_on_screen(wind
 
 def test_the_settings_offer_the_corner_and_a_switch_for_each_event(window):
     settings = _video(window).settings()
-    assert [s.key for s in settings] == ["overlay.corner", "overlay.show.Lick", "overlay.show.Contact"]
-    corner = settings[0]
+    assert [s.key for s in settings] == ["overlay.enabled", "overlay.corner", "overlay.show.Lick", "overlay.show.Contact"]
+    assert settings[0].kind == "toggle" and settings[0].value is True            # one switch for all overlays
+    corner = settings[1]
     assert corner.kind == "choice" and corner.value == "top-right"
     assert [v for _l, v in corner.choices] == ["off", "top-left", "top-right", "bottom-left", "bottom-right"]
-    assert all(s.kind == "toggle" and s.value is True for s in settings[1:])
+    assert all(s.kind == "toggle" and s.value is True for s in settings[2:])
 
 
 def test_changing_a_setting_changes_the_badges_and_reset_returns_to_the_projects_defaults(window):
@@ -234,10 +235,10 @@ def test_the_views_list_shows_the_selected_views_settings_and_changing_them_appl
     panel.list.setCurrentRow([v.title for v in window.views].index("Clip"))
     combos = [c for c in panel.findChildren(QComboBox) if c.property("workspace") == "saved"]
     checks = [c for c in panel.findChildren(QCheckBox) if c.property("workspace") == "saved"]
-    assert len(combos) == 1 and [c.text() for c in checks] == ["Lick", "Contact"]
+    assert len(combos) == 1 and [c.text() for c in checks] == ["Show overlays", "Lick", "Contact"]
     combos[0].setCurrentIndex(combos[0].findData("off"))
     assert _video(window).badges.corner == "off"
-    checks[1].setChecked(False)
+    checks[2].setChecked(False)
     assert _video(window).badges.hidden == {"Contact"}
     panel.list.setCurrentRow([v.title for v in window.views].index("Plain clip"))
     assert not [c for c in panel.findChildren(QCheckBox) if c.property("workspace") == "saved"]       # nothing to set here
@@ -469,9 +470,140 @@ def test_the_marker_takes_the_colour_of_the_line_it_names_and_is_drawn_at_the_co
 def test_each_tracked_thing_can_be_switched_off_and_the_projects_choice_comes_back_on_reset(tracked_window):
     video = next(v for v in tracked_window.views if v.title == "Clip")
     keys = [s.key for s in video.settings()]
-    assert keys == ["overlay.track.Whisker", "overlay.track.Touch"]
+    assert keys == ["overlay.enabled", "overlay.track.Whisker", "overlay.track.Touch"]
     video.apply_setting("overlay.track.Whisker", False)
     video.apply_setting("overlay.track.Touch", False)
     assert video.lines.hidden == {"Whisker"} and video.markers.hidden == {"Touch"}
     video.reset_settings()
     assert video.lines.hidden == set() and video.markers.hidden == set()
+
+
+# -- groups and the master switch ---------------------------------------------------------------------------------------
+@pytest.fixture
+def grouped_window(tmp_path, qapp):
+    """Badges and drawings, some grouped (a group can mix badges and drawings), one ungrouped."""
+    from pynwb.behavior import BehavioralTimeSeries
+
+    _write_video(tmp_path / "clip.mkv")
+    nwb = NWBFile(session_description="s", identifier="g", session_start_time=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    nwb.add_trial(start_time=0.0, stop_time=11.0)
+    behavior = nwb.create_processing_module("behavior", "b")
+    t = np.arange(0, 11.0, 1 / FPS)
+    for w in ("A", "B"):
+        pos = BehavioralTimeSeries(name=f"pos_{w}")
+        for name, base in (("base_x", 60.0), ("base_y", 40.0), ("tip_x", 10.0), ("tip_y", 20.0)):
+            pos.create_timeseries(name=name, data=base + t, unit="px", timestamps=t)
+        behavior.add(pos)
+    licks = BehavioralEvents(name="licks")
+    licks.create_timeseries(name="left", data=[1.0, 1.0], unit="n/a", timestamps=LICKS)
+    behavior.add(licks)
+    with NWBHDF5IO(str(tmp_path / "session.nwb"), "w") as io:
+        io.write(nwb)
+    lines = "\n".join(f'        - {{name: Whisker {w}, group: Whiskers, from: "session:processing/behavior/pos_{w}", base: [base_x, base_y], tip: [tip_x, tip_y]}}' for w in "AB")
+    (tmp_path / "project.yaml").write_text(f"""
+name: grouped
+sources:
+  session: {{type: nwb, path: session.nwb}}
+  video: {{type: video, path: clip.mkv, fps: {FPS}}}
+segmentations:
+  trials: {{label: Trial, from: "session:intervals/trials"}}
+views:
+  - type: video
+    title: Clip
+    source: video
+    overlay:
+      rows:
+        - {{name: Lick, group: Events, kind: events, from: "session:processing/behavior/licks", member: left}}
+      lines:
+{lines}
+""", encoding="utf-8")
+    w = build_window(tmp_path / "project.yaml")
+    w.show()
+    yield w
+    w.close()
+
+
+def _checks(panel):
+    return {c.text(): c for c in panel.findChildren(QCheckBox) if c.property("workspace")}
+
+
+def _select_clip(window):
+    panel = window.views_panel
+    panel.list.setCurrentRow([v.title for v in window.views].index("Clip"))
+    return panel
+
+
+def test_settings_carry_their_group(grouped_window):
+    groups = {s.label: s.group for s in next(v for v in grouped_window.views).settings() if s.kind == "toggle"}
+    assert groups == {"Show overlays": None, "Lick": "Events", "Draw Whisker A": "Whiskers", "Draw Whisker B": "Whiskers"}
+
+
+def test_a_group_has_one_switch_above_its_members_and_it_reflects_them(grouped_window):
+    panel = _select_clip(grouped_window)
+    checks = _checks(panel)
+    assert {"Whiskers", "Events", "Show overlays", "Draw Whisker A", "Draw Whisker B", "Lick"} <= set(checks)
+    group = checks["Whiskers"]
+    assert group.checkState() == Qt.CheckState.Checked
+    checks["Draw Whisker A"].setChecked(False)
+    assert group.checkState() == Qt.CheckState.PartiallyChecked
+    checks["Draw Whisker B"].setChecked(False)
+    assert group.checkState() == Qt.CheckState.Unchecked
+    checks["Draw Whisker A"].setChecked(True)
+    checks["Draw Whisker B"].setChecked(True)
+    assert group.checkState() == Qt.CheckState.Checked
+
+
+def test_the_group_switch_turns_all_its_members_off_and_on_and_the_others_are_untouched(grouped_window):
+    panel = _select_clip(grouped_window)
+    video = _video(grouped_window)
+    group = _checks(panel)["Whiskers"]
+    group.click()                                                      # all on: so off
+    assert video.lines.hidden == {"Whisker A", "Whisker B"} and video.badges.hidden == set()
+    assert all(not _checks(panel)[n].isChecked() for n in ("Draw Whisker A", "Draw Whisker B")) and _checks(panel)["Lick"].isChecked()
+    _checks(panel)["Whiskers"].click()
+    assert video.lines.hidden == set()
+    _checks(panel)["Draw Whisker A"].setChecked(False)                 # mixed: a click turns everything on
+    _checks(panel)["Whiskers"].click()
+    assert video.lines.hidden == set()
+
+
+def test_the_master_switch_hides_every_drawing_without_forgetting_the_individual_choices(grouped_window, qapp):
+    video = _video(grouped_window)
+    video.apply_setting("overlay.track.Whisker A", False)
+    video.apply_setting("overlay.enabled", False)
+    assert video.widget.layers_visible is False
+    assert video.lines.hidden == {"Whisker A"}                         # unchanged underneath
+    video.apply_setting("overlay.enabled", True)
+    assert video.widget.layers_visible and video.lines.hidden == {"Whisker A"}
+
+
+def test_with_the_master_switch_off_nothing_is_painted_over_the_picture(grouped_window, qapp):
+    video = _video(grouped_window)
+    video.resize(480, 360)
+    video._wanted = 30
+    video._on_frame(30, np.full((48, 64), 120, dtype=np.uint8))       # a frame, with a lick on it and tracked lines
+    on = video.widget.grab().toImage()
+    video.apply_setting("overlay.enabled", False)
+    off = video.widget.grab().toImage()
+    video.apply_setting("overlay.enabled", True)
+    again = video.widget.grab().toImage()
+    assert on != off and on == again
+
+
+def test_the_group_switch_is_not_saved_but_its_members_and_the_master_switch_are(grouped_window):
+    panel = _select_clip(grouped_window)
+    checks = _checks(panel)
+    assert checks["Whiskers"].property("workspace").startswith("not saved")
+    assert all(checks[n].property("workspace") == "saved" for n in ("Show overlays", "Lick", "Draw Whisker A"))
+
+
+def test_group_choices_are_saved_with_the_workspace_and_reset_with_it(grouped_window, qapp):
+    window = grouped_window
+    panel = _select_clip(window)
+    _checks(panel)["Whiskers"].click()
+    window.set_view_setting(_video(window), "overlay.enabled", False)
+    window.save_workspace_as("Hidden")
+    window.reset_workspace()
+    assert _video(window).lines.hidden == set() and _video(window).widget.layers_visible
+    window.switch_workspace("Hidden")
+    assert _video(window).lines.hidden == {"Whisker A", "Whisker B"} and not _video(window).widget.layers_visible

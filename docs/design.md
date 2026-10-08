@@ -2199,3 +2199,9 @@ whiskers lie along the visible whiskers and the rings sit where they meet the ob
 tracking and the video are on the same clock: if the lines lagged the whiskers, they would trail behind them as the whiskers move.
 
 Everything is switchable per item in the Views list (`Draw Whisker C0`, `Draw Contact point C1`, ...) and saved with the workspace.
+
+**Groups and a master switch.** Any overlay item (a badge row, a line, a ring) can name a `group:` in the project file; a group may
+mix badges and drawings (all the "Contacts" together, say). The Views list shows each group as one switch above its members, with a
+partial state when only some are on; clicking it turns every member on, or off if they were all on. Only the members' switches are
+saved (the group's is worked out from them). A single "Show overlays" switch hides or shows every layer without forgetting the
+individual choices underneath. Groups are a general property of view settings (`ViewSetting.group`), so any view can use them.
