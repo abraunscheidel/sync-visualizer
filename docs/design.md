@@ -2163,3 +2163,24 @@ were built consistently and is not independent evidence (the project's note says
 neural response to whisker contact: on the recording that has neural data, firing roughly doubles and peaks 15 ms after
 contact.
 
+
+### 34.6 Video overlays and view settings
+
+The video view can draw **layers** over the picture (`syncviz_video/overlays.py`). A layer is told which moment of the video is
+on screen, which is the frame's own time and not the playhead's (decoding can lag behind it), so an overlay always matches the
+picture, and paints itself over the image.
+
+**Corner badges** are the first layer: a small labelled badge for each event row in a corner of the picture, lit when the
+event happens at that frame and fading over `decay` seconds (default 0.25 s, longer than the indicator lights' because an
+event can be shorter than one screen refresh); an interval's badge stays for as long as it lasts. Only lit badges are
+drawn, each in a fixed slot among the shown rows, so nothing shifts when another appears. Rows use the same specification as
+the event tracks. A row whose data a recording lacks is left out with a note; the picture is still shown.
+
+**What is shown is the project's choice**, in the video view's `overlay:` section (`corner`, `decay`, `rows`, and optionally
+`hidden`); the application has no defaults of its own and a view with no `overlay:` has no badges. The viewer can change the
+corner (top left, top right, bottom left, bottom right, or off) and switch events on or off.
+
+**View settings** are the general way a view offers such choices: `View.settings()` lists `ViewSetting`s (a choice or a
+toggle), the Views list shows them when the view is selected, `apply_setting` changes one and `reset_settings` returns to the
+project's values. The window keeps the user's choices by view title in the workspace (`view_settings`), so they are saved
+with it, switch with it, and reset to the project's values with it.

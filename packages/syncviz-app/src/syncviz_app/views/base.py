@@ -27,6 +27,22 @@ def describe_delay(milliseconds: float, sentence: bool = False) -> str:
 
 
 @dataclass
+class ViewSetting:
+    """One setting a view offers the user, shown under the Views list when the view is selected.
+
+    `kind` is "choice" (one of `choices`, each a `(label, value)`) or "toggle" (on or off). `value` is the current value.
+    The view applies a new one in `apply_setting` and returns to its project defaults in `reset_settings`; the window keeps
+    the user's choices in the workspace, by view title.
+    """
+
+    key: str
+    label: str
+    kind: str
+    value: object
+    choices: list[tuple[str, object]] | None = None
+
+
+@dataclass
 class Candidate:
     """A view the user could add: what to call it in the dialog, and the spec that creates it."""
 
@@ -50,6 +66,16 @@ class View(QWidget):
         # It changes only what this view draws, never the data or the timeline.
         self.lag: float = 0.0
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
+
+    def settings(self) -> list[ViewSetting]:
+        """The settings this view offers (none by default)."""
+        return []
+
+    def apply_setting(self, key: str, value) -> None:
+        """Change one of the settings listed by `settings`."""
+
+    def reset_settings(self) -> None:
+        """Return every setting to what the project file gives (or the view's own default)."""
 
     @classmethod
     def candidates(cls, catalog: dict[str, list[DataEntry]]) -> list[Candidate]:

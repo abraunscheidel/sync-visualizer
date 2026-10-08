@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
         saved = workspace or Workspace()
         self._added: dict[str, dict] = {s.get("title") or s["type"]: s for s in saved.added}
         self._removed: list[str] = list(saved.removed)
+        self._view_settings: dict[str, dict] = {}                # each view's own settings by title (see View.settings)
         self._lags: dict[str, float] = {}                       # display lag in ms by view title (see View.lag)
         self.project, self.context, self.views = project, context, views
         self._colors_used = len(views)                       # colours are never reused, even after a removal
@@ -161,7 +162,8 @@ class MainWindow(QMainWindow):
 
     def settings(self) -> dict:
         """The working state apart from the arrangement: filters, frame step and speed."""
-        out = {"navigation": self.navigation.state(), "view_lags": dict(self._lags)}
+        out = {"navigation": self.navigation.state(), "view_lags": dict(self._lags),
+               "view_settings": {t: dict(v) for t, v in self._view_settings.items()}}
         if self.filter_bar is not None:
             out["filters"] = self.filter_bar.state()
         if self.collection_bar is not None:
@@ -193,8 +195,28 @@ class MainWindow(QMainWindow):
         if self.views_panel is not None:
             self.views_panel.show_lag()
 
+    def set_view_setting(self, view: View, key: str, value) -> None:
+        """Change one of a view's own settings (see View.settings) and remember it."""
+        if view is None:
+            return
+        self._view_settings.setdefault(view.title, {})[key] = value
+        view.apply_setting(key, value)
+
+    def _apply_view_settings(self, saved: dict) -> None:
+        """Give every view the settings in `saved` (by title), and its project defaults for the rest."""
+        self._view_settings = {}
+        for view in self.views:
+            view.reset_settings()
+            for key, value in saved.get(view.title, {}).items():
+                view.apply_setting(key, value)
+            if saved.get(view.title):
+                self._view_settings[view.title] = dict(saved[view.title])
+        if self.views_panel is not None:
+            self.views_panel.show_settings()
+
     def _apply_settings(self, settings: dict) -> None:
         self._apply_lags(settings.get("view_lags", {}))
+        self._apply_view_settings(settings.get("view_settings", {}))
         self.navigation.apply_state(settings.get("navigation", {}))
         if self.filter_bar is not None:
             self.filter_bar.apply_state(settings.get("filters", {}))
@@ -303,6 +325,7 @@ class MainWindow(QMainWindow):
             self.filter_bar.repopulate()
         self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)))
         self._apply_lags(dict(self._lags))
+        self._apply_view_settings({t: dict(v) for t, v in self._view_settings.items()})
         self._views_changed()
         self._restore_collection()
         self._set_title()
@@ -427,6 +450,8 @@ class MainWindow(QMainWindow):
         self._colors_used += 1
         self.docks.append(self._make_dock(view, spec.get("area", "right")))
         self.set_view_lag(view, self._lags.get(view.title, float(spec.get("lag_ms", 0.0))))
+        for key, value in self._view_settings.get(view.title, {}).items():
+            view.apply_setting(key, value)
         if track:
             self._added[view.title] = spec
         if refresh:

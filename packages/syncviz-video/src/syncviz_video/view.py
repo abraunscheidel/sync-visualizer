@@ -11,7 +11,10 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz.core import RegularGrid
-from syncviz_app.views.base import Candidate, View
+from syncviz.sources import MissingDataError
+from syncviz_app.views.base import Candidate, View, ViewSetting
+from syncviz_app.views.rows import load_row_data
+from syncviz_video.overlays import CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, CornerBadges
 from syncviz_video.frame_index import FrameIndex
 from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
 
@@ -83,6 +86,7 @@ class _FrameWidget(QWidget):
         self._image: QImage | None = None
         self._message = ""
         self._cue = ""
+        self.layers: list = []                # drawn over the picture (see overlays.py)
         self._placeholder_mix = 0.0           # 0 = frame fully shown, 1 = placeholder fully shown
         self._target_mix = 0.0
         self._timer = QTimer(self)
@@ -128,6 +132,8 @@ class _FrameWidget(QWidget):
             target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
             p.setOpacity(1.0 - self._placeholder_mix)
             p.drawImage(target, self._image)
+            for layer in self.layers:
+                layer.paint(p, target)
             p.setOpacity(1.0)
         if self._placeholder_mix > 0.0 or self._image is None:
             fg = pal.color(pal.ColorRole.WindowText)
@@ -171,6 +177,11 @@ class VideoView(View):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.widget)
+        self.badges: CornerBadges | None = None
+        self._badge_defaults = {"corner": DEFAULT_CORNER, "hidden": set()}
+        overlay = spec.get("overlay")
+        if overlay:
+            self._build_badges(context, overlay)
         self._wanted = -1
         self._shown = -1
         self._progress_at = perf_counter()     # when a frame last arrived, or the wait began
@@ -178,6 +189,56 @@ class VideoView(View):
         self._cue_timer.setSingleShot(True)
         self._cue_timer.timeout.connect(lambda: self.widget.set_cue(self._cue_text()))
         context.timeline.subscribe(self._on_timeline)
+
+    def _build_badges(self, context, overlay: dict) -> None:
+        """Event badges over the picture, from the project's `overlay:` section. A row whose data this recording does
+        not have is left out, not an error: the picture is still worth showing."""
+        rows = []
+        for row in overlay.get("rows", []):
+            try:
+                data = load_row_data(context, row)
+            except MissingDataError as exc:
+                context.notes.append(f"video overlay row {row.get('name', '')!r} left out: {exc}")
+                continue
+            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data})
+        self._badge_defaults = {"corner": overlay.get("corner", DEFAULT_CORNER), "hidden": set(overlay.get("hidden", []))}
+        self.badges = CornerBadges(rows, self._badge_defaults["corner"], float(overlay.get("decay", DEFAULT_DECAY_S)),
+                                   self._badge_defaults["hidden"])
+        self.widget.layers.append(self.badges)
+
+    def _update_layers(self) -> None:
+        """Bring the overlays to the time of the frame on screen (not the playhead, which may be ahead of it)."""
+        if self.badges is not None and self._shown >= 0:
+            self.badges.set_time(self._shown / self.fps)
+            self.widget.update()
+
+    # -- settings, shown under the Views list --------------------------------------------------
+    def settings(self) -> list[ViewSetting]:
+        if self.badges is None or not self.badges.rows:
+            return []
+        labels = {OFF: "Off", **{c: c.replace("-", " ").capitalize() for c in CORNERS}}
+        out = [ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
+                           [(labels[c], c) for c in (OFF, *CORNERS)])]
+        out += [ViewSetting(f"overlay.show.{name}", name, "toggle", name not in self.badges.hidden) for name in self.badges.names]
+        return out
+
+    def apply_setting(self, key: str, value) -> None:
+        if self.badges is None:
+            return
+        if key == "overlay.corner":
+            self.badges.set_corner(value)
+        elif key.startswith("overlay.show."):
+            name = key[len("overlay.show."):]
+            hidden = set(self.badges.hidden)
+            (hidden.discard if value else hidden.add)(name)
+            self.badges.set_hidden(hidden)
+        self._update_layers()
+
+    def reset_settings(self) -> None:
+        if self.badges is not None:
+            self.badges.set_corner(self._badge_defaults["corner"])
+            self.badges.set_hidden(self._badge_defaults["hidden"])
+            self._update_layers()
 
     def _cue_text(self) -> str:
         return "Buffering…" if self.context.timeline.holding else "Loading…"
@@ -224,6 +285,7 @@ class VideoView(View):
         h, w = image.shape
         self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
         self._shown = n
+        self._update_layers()
 
     # -- debugging hooks (used by the Debug menu) ---------------------------------------
     @property

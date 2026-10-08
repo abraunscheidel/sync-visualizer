@@ -53,6 +53,18 @@ views:
     title: Whisker video
     source: video
     area: left
+    # Event badges over the picture, in a corner (top-right, top-left, bottom-left, bottom-right, or off). Each badge lights
+    # when its event happens at the frame on screen and fades. The viewer can change the corner and hide events from the
+    # Views list; this is what it starts with.
+    overlay:
+      corner: top-right
+      decay: 0.25
+      rows:
+        - {name: Lick left,  kind: events,    from: "session:processing/behavior/licks",   member: left}
+        - {name: Lick right, kind: events,    from: "session:processing/behavior/licks",   member: right}
+        - {name: Reward left, kind: events,   from: "session:processing/behavior/rewards", member: left}
+        - {name: Contact C0, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
+        - {name: Contact C1, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
   - type: timeseries
     title: Whisker C0 angle
     series: {from: "session:processing/behavior/processed_position_whisker_C0", member: angle}
