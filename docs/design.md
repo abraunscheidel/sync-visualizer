@@ -2047,3 +2047,27 @@ measurement); the label is the unit's name. `columns` fixes the column count; by
 panel's shape, with the label inside each tile. Rows use the same specification as the event tracks, which remain the way to see spike timing
 over seconds, and both views offer the same rows in the Add view dialog. Not built: a rate mode (spikes in a
 trailing window), trial-aligned rasters, and a firing-rate heat map.
+
+### 16.2 Parked idea: acting on an indicator light
+
+Not built; recorded so it is not lost. Clicking a light (an event row, such as a spike unit) could mean three things,
+in increasing scope, and each is useful alone:
+
+1. **Jump to an occurrence.** Click goes to that row's next event, Shift-click to the previous. Needs only the row's
+   event times, which the view already has. Also gives "step through spikes".
+2. **Clip.** Click selects a window around an occurrence (a configurable amount before and after, for example 200 ms)
+   and loops or plays just that, using the timeline's existing selection range.
+3. **Event-triggered filter.** The lit rows become a restriction: movement is limited to windows around every event of
+   the chosen rows, as a segment filter limits movement to matching segments. An event window is just a segment, so
+   hatching, skipping and previous/next could be reused.
+
+Open questions for step 3:
+* Several rows selected: the *union* of their windows is the natural default (any of these units); "all firing
+  together" is a different, analytical question for later.
+* It should *intersect* with the other filters (for example one unit's spikes, but only in concave trials). That points
+  to a general stack of restrictions, each narrowing what is reachable: collection, then segment, then event.
+* Scale: a busy unit has tens of thousands of spikes, so overlapping windows must be merged, and the timeline strip
+  would show them as a density rather than as individual stripes.
+* Safety: a stray click during playback must not silently change what plays, so active event filters need to be obvious
+  and easy to clear.
+* Event filters are working settings, so they belong in the workspace (see docs/checklists.md).
