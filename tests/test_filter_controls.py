@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from syncviz.core import ActionBus, SegmentNavigator, Timeline
 from syncviz.resources import IntervalSeries
-from syncviz_app.controls import ControlsBar
+from syncviz_app.controls import FilterBar
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +37,7 @@ def controls(qapp):
     nav = SegmentNavigator(bus, intervals, label="Trial")
     nav.follow(timeline)
     context = SimpleNamespace(bus=bus, timeline=timeline, navigator=nav, notes=[])
-    bar = ControlsBar(context, ["stimulus", "outcome"])
+    bar = FilterBar(context, ["stimulus", "outcome"])
     return bar, nav
 
 
@@ -105,3 +105,16 @@ def test_a_dead_end_combination_cannot_be_reached_from_the_ui(controls):
 
     assert not outcome.model().item(error_index).isEnabled()
     assert nav.count == 3                              # still the previous, consistent filter
+
+
+def test_the_skip_option_is_a_checkbox_that_is_always_enabled_and_drives_the_navigator(controls):
+    bar, nav = controls
+
+    assert bar.skip.isEnabled()                       # even with no filter applied
+    bar.skip.setChecked(False)
+    assert nav.skip_hidden is False
+    bar.skip.setChecked(True)
+    assert nav.skip_hidden is True
+
+    choose(bar._filters["stimulus"], "convex")
+    assert bar.skip.isEnabled()                       # and still, with one

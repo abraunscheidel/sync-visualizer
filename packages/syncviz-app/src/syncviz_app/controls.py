@@ -1,10 +1,15 @@
-"""Playback and segment-navigation controls."""
+"""The window's fixed controls, in two rows.
+
+* NavigationBar: play, and two clearly separate ways of moving the playhead: by segment
+  (a "trial"), and by frame, where a frame is whatever the user has defined it to be.
+* FilterBar: which segments are shown, and whether playback skips the ones that are not.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLabel, QSpinBox, QToolBar
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QSpinBox, QToolBar
 
 from syncviz.core import FixedStep, SetPlaying, StepSegment, StepTime
 from syncviz.core.stepping import FIXED_INTERVAL
@@ -16,14 +21,16 @@ TIME_LABEL_INTERVAL_MS = 50
 ALL = "All"
 
 
-class ControlsBar(QToolBar):
-    def __init__(
-        self,
-        context: AppContext,
-        filter_attributes: list[str] | None = None,
-        keys: dict[str, str] | None = None,
-    ) -> None:
-        super().__init__("Controls")
+def _caption(text: str) -> QLabel:
+    """A bold heading for a group of controls."""
+    label = QLabel(text)
+    label.setStyleSheet("font-weight: 600; padding: 0 6px;")
+    return label
+
+
+class NavigationBar(QToolBar):
+    def __init__(self, context: AppContext, keys: dict[str, str] | None = None) -> None:
+        super().__init__("Navigation")
         self.context = context
         self.keys = {**DEFAULT_KEYS, **(keys or {})}
         self.setMovable(False)
@@ -37,52 +44,9 @@ class ControlsBar(QToolBar):
 
         nav = context.navigator
         if nav is not None:
-            self.addSeparator()
-            prev = QAction(f"◀ Previous {nav.label.lower()}", self)
-            prev.setShortcut(QKeySequence(self.keys["previous_segment"]))
-            prev.setToolTip(f"Previous {nav.label.lower()} ({self.keys['previous_segment']})")
-            prev.triggered.connect(lambda: context.bus.publish(StepSegment(-1)))
-            nxt = QAction(f"Next {nav.label.lower()} ▶", self)
-            nxt.setShortcut(QKeySequence(self.keys["next_segment"]))
-            nxt.setToolTip(f"Next {nav.label.lower()} ({self.keys['next_segment']})")
-            nxt.triggered.connect(lambda: context.bus.publish(StepSegment(+1)))
-            self.addAction(prev)
-            self.segment_label = QLabel()
-            self.segment_label.setMinimumWidth(170)
-            self.addWidget(self.segment_label)
-            self.addAction(nxt)
-
-            self._filters: dict[str, QComboBox] = {}
-            for attribute in filter_attributes or []:
-                if attribute not in nav.intervals.attributes:
-                    context.notes.append(f"filter {attribute!r} is not an attribute of the segments; ignored")
-                    continue
-                box = QComboBox()
-                box.addItem(ALL, None)
-                for value in nav.intervals.unique(attribute):
-                    box.addItem(str(value), value)
-                self.addSeparator()
-                self.addWidget(QLabel(f"{attribute}: "))
-                self.addWidget(box)
-                self._filters[attribute] = box
-            self._refresh_options()                       # counts in the option text; dead ends disabled
-            for box in self._filters.values():
-                box.currentIndexChanged.connect(self._filters_changed)
-            self.match_label = QLabel()
-            self.match_label.setMinimumWidth(110)
-            self.addSeparator()
-            self.addWidget(self.match_label)
-            # With a filter active, playback normally jumps over segments that don't match it.
-            # Unticking this plays straight through everything instead.
-            self.addSeparator()
-            self.skip = QAction(f"Skip non-matching {nav.label.lower()}s", self)
-            self.skip.setCheckable(True)
-            self.skip.setChecked(nav.skip_hidden)
-            self.skip.setToolTip("While a filter is active, playback skips segments that don't match it")
-            self.skip.toggled.connect(lambda on: setattr(nav, "skip_hidden", on))
-            self.addAction(self.skip)
-            nav.subscribe(lambda _n: self._update_segment_label())
-            self._update_segment_label()
+            self._add_segment_group(nav)
+        if context.stepper is not None:
+            self._add_frame_group(context.stepper)
 
         self.addSeparator()
         self.speed = QComboBox()
@@ -90,7 +54,7 @@ class ControlsBar(QToolBar):
             self.speed.addItem(f"{s:g}×", s)
         self.speed.setCurrentIndex(SPEEDS.index(1.0))
         self.speed.currentIndexChanged.connect(lambda _i: setattr(tl, "rate", self.speed.currentData()))
-        self.addWidget(QLabel("Speed: "))
+        self.addWidget(_caption("Speed"))
         self.addWidget(self.speed)
 
         self.time_label = QLabel()
@@ -104,6 +68,92 @@ class ControlsBar(QToolBar):
         tl.subscribe(self._on_timeline)
         self._on_timeline(tl)
 
+    # -- moving between segments ---------------------------------------------------------
+    def _add_segment_group(self, nav) -> None:
+        bus = self.context.bus
+        noun = nav.label.lower()
+        self.addSeparator()
+        self.addWidget(_caption("Segment"))          # the section is generic; its items use the configured name
+        self.previous_segment = QAction("◀", self)
+        self.previous_segment.setShortcut(QKeySequence(self.keys["previous_segment"]))
+        self.previous_segment.setToolTip(f"Previous {noun} ({self.keys['previous_segment']})")
+        self.previous_segment.triggered.connect(lambda: bus.publish(StepSegment(-1)))
+        self.addAction(self.previous_segment)
+        self.segment_label = QLabel()
+        self.segment_label.setMinimumWidth(150)
+        self.addWidget(self.segment_label)
+        self.next_segment = QAction("▶", self)
+        self.next_segment.setShortcut(QKeySequence(self.keys["next_segment"]))
+        self.next_segment.setToolTip(f"Next {noun} ({self.keys['next_segment']})")
+        self.next_segment.triggered.connect(lambda: bus.publish(StepSegment(+1)))
+        self.addAction(self.next_segment)
+        nav.subscribe(lambda _n: self._update_segment_label())
+        self._update_segment_label()
+
+    def _update_segment_label(self) -> None:
+        nav = self.context.navigator
+        self.segment_label.setText(f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})  ")
+
+    # -- moving by frame -----------------------------------------------------------------
+    def _add_frame_group(self, stepper) -> None:
+        """A "frame" is one tick of a time base the user picks: a video's frames, a signal's
+        samples, or a fixed interval. It is always called a frame here; what defines it is
+        the selector next to it."""
+        bus = self.context.bus
+        self.addSeparator()
+        self.addWidget(_caption("Frame"))
+        self.step_back = QAction("◀", self)
+        self.step_back.setShortcut(QKeySequence(self.keys["step_back"]))
+        self.step_back.setToolTip(f"Back by the number of frames shown ({self.keys['step_back']})")
+        self.step_back.triggered.connect(lambda: bus.publish(StepTime(-1)))
+        self.addAction(self.step_back)
+
+        self.count = QSpinBox()
+        self.count.setRange(1, 100000)
+        self.count.setValue(stepper.count)
+        self.count.setSuffix(" frames")
+        self.count.setMinimumWidth(110)
+        self.count.setToolTip("How many frames each step moves")
+        self.count.valueChanged.connect(lambda v: setattr(stepper, "count", v))
+        self.addWidget(self.count)
+
+        self.step_forward = QAction("▶", self)
+        self.step_forward.setShortcut(QKeySequence(self.keys["step_forward"]))
+        self.step_forward.setToolTip(f"Forward by the number of frames shown ({self.keys['step_forward']})")
+        self.step_forward.triggered.connect(lambda: bus.publish(StepTime(+1)))
+        self.addAction(self.step_forward)
+
+        self.addWidget(QLabel("  defined by "))
+        self.base = QComboBox()
+        for name in stepper.bases:
+            self.base.addItem(name)
+        self.base.setCurrentText(stepper.reference or "")
+        self.base.setToolTip("Which view defines a frame: its next frame or sample, or a fixed interval")
+        self.base.currentTextChanged.connect(self._base_changed)
+        self.addWidget(self.base)
+
+        self.interval = QDoubleSpinBox()
+        self.interval.setRange(0.01, 600000.0)
+        self.interval.setDecimals(2)
+        self.interval.setSuffix(" ms")
+        fixed = stepper.bases.get(FIXED_INTERVAL)
+        self.interval.setValue(fixed.interval * 1000.0 if isinstance(fixed, FixedStep) else 10.0)
+        self.interval.valueChanged.connect(self._interval_changed)
+        self._interval_action = self.addWidget(self.interval)
+        self._interval_action.setVisible(self.base.currentText() == FIXED_INTERVAL)
+
+        # Spin boxes keep the keyboard once clicked, which would swallow the step shortcuts.
+        for box in (self.count, self.interval):
+            box.editingFinished.connect(box.clearFocus)
+
+    def _base_changed(self, name: str) -> None:
+        self.context.stepper.reference = name
+        self._interval_action.setVisible(name == FIXED_INTERVAL)
+
+    def _interval_changed(self, milliseconds: float) -> None:
+        self.context.stepper.bases[FIXED_INTERVAL] = FixedStep(milliseconds / 1000.0)
+
+    # -- time display --------------------------------------------------------------------
     def _refresh_time_label(self) -> None:
         self.time_label.setText(f"{self.context.timeline.time:10.3f} s")
 
@@ -120,12 +170,58 @@ class ControlsBar(QToolBar):
             self._label_timer.stop()
             self._refresh_time_label()              # seeks and pauses show immediately
 
-    def _update_segment_label(self) -> None:
+
+class FilterBar(QToolBar):
+    """Which segments are shown, how many match, and whether playback skips the rest."""
+
+    def __init__(self, context: AppContext, filter_attributes: list[str] | None = None) -> None:
+        super().__init__("Filters")
+        self.context = context
+        self.setMovable(False)
+        nav = context.navigator
+        noun = nav.plural.lower()
+
+        self.addWidget(_caption("Filter"))
+        self._filters: dict[str, QComboBox] = {}
+        for attribute in filter_attributes or []:
+            if attribute not in nav.intervals.attributes:
+                context.notes.append(f"filter {attribute!r} is not an attribute of the segments; ignored")
+                continue
+            box = QComboBox()
+            box.addItem(ALL, None)
+            for value in nav.intervals.unique(attribute):
+                box.addItem(str(value), value)
+            self.addWidget(QLabel(f"  {attribute}: "))
+            self.addWidget(box)
+            self._filters[attribute] = box
+        self._refresh_options()                       # counts in the option text; dead ends disabled
+        for box in self._filters.values():
+            box.currentIndexChanged.connect(self._filters_changed)
+
+        self.match_label = QLabel()
+        self.match_label.setMinimumWidth(110)
+        self.addSeparator()
+        self.addWidget(self.match_label)
+
+        # Next/previous always follow the filter. This only decides what *playback* does when it
+        # reaches a segment the filter hides: skip ahead to the next match, or play straight through.
+        self.addSeparator()
+        self.skip = QCheckBox(f"Skip non-matching {noun} while playing")
+        self.skip.setChecked(nav.skip_hidden)
+        self.skip.setToolTip(
+            f"On: playback jumps over {noun} the filter hides. Off: playback plays straight through them.\n"
+            f"The next/previous buttons always follow the filter."
+        )
+        self.skip.toggled.connect(lambda on: setattr(nav, "skip_hidden", on))
+        self.addWidget(self.skip)
+
+        nav.subscribe(lambda _n: self._update_match_label())
+        self._update_match_label()
+
+    def _update_match_label(self) -> None:
         nav = self.context.navigator
-        self.segment_label.setText(f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})  ")
-        self.skip.setEnabled(nav.filtered)                  # nothing to skip without a filter
         total = len(nav.intervals)
-        noun = f"{nav.label.lower()}s"
+        noun = nav.plural.lower()
         self.match_label.setText(f"{nav.count} of {total} match" if nav.filtered else f"{total} {noun}")
 
     def _selected(self, skip: str | None = None) -> dict:
@@ -159,77 +255,4 @@ class ControlsBar(QToolBar):
             nav.filter(**criteria)
         except ValueError:
             # Unreachable from the UI, since options that match nothing are disabled.
-            self.segment_label.setText(f"  no {nav.label.lower()} matches  ")
-
-
-class StepBar(QToolBar):
-    """Steps the playhead by one tick of a time base the user chooses.
-
-    A tick is the next frame or sample of a view's data (for example the video's frames), or a
-    fixed interval. Several views can offer a grid; the user picks which one defines the step.
-    """
-
-    def __init__(self, context: AppContext, keys: dict[str, str] | None = None) -> None:
-        super().__init__("Stepping")
-        self.context = context
-        stepper = context.stepper
-        keys = {**DEFAULT_KEYS, **(keys or {})}
-        self.setMovable(False)
-
-        back = QAction("◀ Step", self)
-        back.setShortcut(QKeySequence(keys["step_back"]))
-        back.setToolTip(f"Step back ({keys['step_back']})")
-        back.triggered.connect(lambda: context.bus.publish(StepTime(-1)))
-        forward = QAction("Step ▶", self)
-        forward.setShortcut(QKeySequence(keys["step_forward"]))
-        forward.setToolTip(f"Step forward ({keys['step_forward']})")
-        forward.triggered.connect(lambda: context.bus.publish(StepTime(+1)))
-
-        self.count = QSpinBox()
-        self.count.setRange(1, 100000)
-        self.count.setValue(stepper.count)
-        self.count.setMinimumWidth(110)
-        self.count.valueChanged.connect(lambda v: setattr(stepper, "count", v))     # the unit is set below
-
-        self.base = QComboBox()
-        for name in stepper.bases:
-            self.base.addItem(name)
-        self.base.setCurrentText(stepper.reference or "")
-        self.base.setToolTip("What one step means: the next frame or sample of this view's data, or a fixed interval")
-        self.base.currentTextChanged.connect(self._base_changed)
-        self._update_unit()
-
-        self.interval = QDoubleSpinBox()
-        self.interval.setRange(0.01, 600000.0)
-        self.interval.setDecimals(2)
-        self.interval.setSuffix(" ms")
-        fixed = stepper.bases.get(FIXED_INTERVAL)
-        self.interval.setValue(fixed.interval * 1000.0 if isinstance(fixed, FixedStep) else 10.0)
-        self.interval.valueChanged.connect(self._interval_changed)
-
-        # Spin boxes keep the keyboard once clicked, which would swallow the step shortcuts.
-        for box in (self.count, self.interval):
-            box.editingFinished.connect(box.clearFocus)
-
-        self.addAction(back)
-        self.addWidget(self.count)
-        self.addAction(forward)
-        self.addSeparator()
-        self.addWidget(QLabel("Step by: "))
-        self.addWidget(self.base)
-        self._interval_action = self.addWidget(self.interval)
-        self._interval_action.setVisible(self.base.currentText() == FIXED_INTERVAL)
-
-    def _update_unit(self) -> None:
-        """Say what is being counted: "10 frames" for a video, "10 samples" for a signal."""
-        unit = getattr(self.context.stepper.base, "unit", "steps")
-        self.count.setSuffix(f" {unit}")
-        self.count.setToolTip(f"How many {unit} each Step moves")
-
-    def _base_changed(self, name: str) -> None:
-        self.context.stepper.reference = name
-        self._interval_action.setVisible(name == FIXED_INTERVAL)
-        self._update_unit()
-
-    def _interval_changed(self, milliseconds: float) -> None:
-        self.context.stepper.bases[FIXED_INTERVAL] = FixedStep(milliseconds / 1000.0)
+            self.match_label.setText(f"no {nav.label.lower()} matches")

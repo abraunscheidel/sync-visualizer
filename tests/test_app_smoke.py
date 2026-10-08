@@ -242,7 +242,7 @@ def test_stepping_defaults_to_the_first_view_with_a_grid_and_lists_the_others(wi
     stepper = window.context.stepper
     assert stepper.reference == "Clip"                       # the video: first view with a time grid
     assert list(stepper.bases) == ["Clip", "Angle", "Fixed interval"]
-    assert [window.step_bar.base.itemText(i) for i in range(window.step_bar.base.count())] == list(stepper.bases)
+    assert [window.navigation.base.itemText(i) for i in range(window.navigation.base.count())] == list(stepper.bases)
 
 
 def test_step_moves_by_one_video_frame_and_the_user_can_choose_another_definition(window):
@@ -253,7 +253,7 @@ def test_step_moves_by_one_video_frame_and_the_user_can_choose_another_definitio
     bus.publish(StepTime(+1))
     assert tl.time == pytest.approx(1.0 + 1 / FPS)           # one frame of the 30 fps clip
 
-    window.step_bar.base.setCurrentText("Angle")             # the plot samples every 20 ms
+    window.navigation.base.setCurrentText("Angle")             # the plot samples every 20 ms
     bus.publish(StepTime(+1))
     assert tl.time == pytest.approx(1.04)                    # the next sample ahead of 1.0333 s
     assert stepper.reference == "Angle"
@@ -262,7 +262,7 @@ def test_step_moves_by_one_video_frame_and_the_user_can_choose_another_definitio
 def test_fixed_interval_and_count_are_adjustable_from_the_toolbar(window):
     from syncviz.core import StepTime
     tl, bus = window.context.timeline, window.context.bus
-    bar = window.step_bar
+    bar = window.navigation
     bar.base.setCurrentText("Fixed interval")
     bar.interval.setValue(250.0)
     bar.count.setValue(4)
@@ -274,7 +274,7 @@ def test_fixed_interval_and_count_are_adjustable_from_the_toolbar(window):
 
 
 def test_the_interval_box_only_shows_for_the_fixed_interval(window):
-    bar = window.step_bar
+    bar = window.navigation
     bar.base.setCurrentText("Clip")
     assert not bar._interval_action.isVisible()
     bar.base.setCurrentText("Fixed interval")
@@ -282,30 +282,25 @@ def test_the_interval_box_only_shows_for_the_fixed_interval(window):
 
 
 def test_arrow_keys_stay_segment_navigation_and_shift_arrows_step(window):
-    from PySide6.QtGui import QKeySequence
-    shortcuts = {a.text(): a.shortcut().toString() for a in window.controls.actions() + window.step_bar.actions() if a.shortcut()}
-    assert shortcuts["Next block ▶"] == QKeySequence("Right").toString()
-    assert shortcuts["◀ Previous block"] == QKeySequence("Left").toString()
-    assert shortcuts["Step ▶"] == QKeySequence("Shift+Right").toString()
-    assert shortcuts["◀ Step"] == QKeySequence("Shift+Left").toString()
+    nav = window.navigation
+    assert nav.next_segment.shortcut().toString() == "Right"
+    assert nav.previous_segment.shortcut().toString() == "Left"
+    assert nav.step_forward.shortcut().toString() == "Shift+Right"
+    assert nav.step_back.shortcut().toString() == "Shift+Left"
 
 
-def test_the_step_count_says_what_it_counts_and_follows_the_chosen_grid(window):
-    bar = window.step_bar
-
-    bar.base.setCurrentText("Clip")
-    assert bar.count.suffix() == " frames"
-    bar.base.setCurrentText("Angle")
-    assert bar.count.suffix() == " samples"
-    bar.base.setCurrentText("Fixed interval")
-    assert bar.count.suffix() == " steps"
+def test_a_frame_is_always_called_a_frame_whichever_view_defines_it(window):
+    bar = window.navigation
+    for choice in ("Clip", "Angle", "Fixed interval"):
+        bar.base.setCurrentText(choice)
+        assert bar.count.suffix() == " frames"
 
 
 def test_stepping_many_frames_moves_by_that_many_frames_and_not_segments(window):
     from syncviz.core import StepTime
     bus, tl, nav = window.context.bus, window.context.timeline, window.context.navigator
-    window.step_bar.base.setCurrentText("Clip")
-    window.step_bar.count.setValue(5)
+    window.navigation.base.setCurrentText("Clip")
+    window.navigation.count.setValue(5)
     bus.publish(Seek(1.0))
     segment_before = nav.index
 
@@ -313,3 +308,13 @@ def test_stepping_many_frames_moves_by_that_many_frames_and_not_segments(window)
 
     assert tl.time == pytest.approx(1.0 + 5 / FPS)           # five video frames ahead
     assert nav.index == segment_before                        # the trial did not change
+
+
+def test_the_navigation_sections_are_named_generically_and_the_items_use_the_configured_label(window):
+    from PySide6.QtWidgets import QLabel
+    nav_bar = window.navigation
+    captions = [w.text() for w in nav_bar.findChildren(QLabel) if w.styleSheet().startswith("font-weight")]
+
+    assert "Segment" in captions and "Frame" in captions
+    assert "Block" not in captions                    # the configured label is for items, not section headings
+    assert nav_bar.segment_label.text().strip().startswith("Block 10")

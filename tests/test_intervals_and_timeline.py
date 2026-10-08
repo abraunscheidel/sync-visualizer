@@ -424,3 +424,10 @@ def test_a_short_pause_is_not_a_gap_but_a_long_one_is():
 def test_coverage_of_empty_and_tiny_series():
     assert TimeSeries(times=np.array([]), values=np.array([])).coverage().shape == (0, 2)
     assert TimeSeries(times=np.array([4.0, 5.0]), values=np.zeros(2)).coverage().tolist() == [[4.0, 5.0]]
+
+
+def test_the_plural_defaults_to_adding_an_s_and_can_be_set_for_irregular_names():
+    bus = ActionBus()
+
+    assert SegmentNavigator(bus, make_intervals(), label="Trial").plural == "Trials"
+    assert SegmentNavigator(bus, make_intervals(), label="Stimulus", label_plural="Stimuli").plural == "Stimuli"

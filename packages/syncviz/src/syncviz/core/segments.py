@@ -27,12 +27,14 @@ class SegmentNavigator:
         intervals: IntervalSeries,
         label: str = "Segment",
         index_attribute: str | None = None,
+        label_plural: str | None = None,
     ) -> None:
         if len(intervals) == 0:
             raise ValueError("cannot navigate an empty interval series")
         self.bus = bus
         self.intervals = intervals
-        self.label = label                         # display text only
+        self.label = label                         # display text only, from the project configuration
+        self.plural = label_plural or f"{label}s"  # for irregular plurals ("Stimulus" -> "Stimuli") set it in the config
         self.index_attribute = index_attribute     # attribute shown as the segment's number
         self.skip_hidden = True                    # while playing with a filter active, skip non-matching segments
         self._timeline = None                      # set by follow()

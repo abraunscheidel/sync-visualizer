@@ -23,7 +23,7 @@ sources:
 # display text; "Trial" is this experiment's name for them.
 segmentations:
   trials:
-    label: Trial
+    label: Trial               # the name shown for each item; add `label_plural:` if "+s" is wrong
     from: session:intervals/trials
     number_attribute: trial      # shown as the segment's number
     filters: [stimulus, outcome, choice, servo_position]

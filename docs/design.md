@@ -948,13 +948,13 @@ Two different kinds of "step" exist, and neither is special to any one experimen
   Shift+Right, or the Step buttons. The less common action of a pair takes Shift.
 
 **What a tick is is chosen by the user, not assumed.** Any view with a natural grid of
-times can offer it: a video its frames, a signal its samples. The toolbar's "Step by"
-selector lists every view that offers one, plus a fixed interval. The first one is only
-the starting choice; a project can name another (`step: {view: ...}` or
+times can offer it: a video its frames, a signal its samples. The interface always calls
+this unit a **frame**, and a "defined by" selector next to it lists every view that offers
+a grid, plus a fixed interval. The first one is only the starting choice; a project can name another (`step: {view: ...}` or
 `step: {interval_ms: ...}`). A step goes to the next tick of the chosen grid, not a fixed
 distance, so from between frames it snaps to the next frame, and for irregular data it
-follows the real sample times. A step count (x N) repeats the step. Stepping pauses
-playback.
+follows the real sample times. The count box ("10 frames") repeats the step that many
+times. Stepping pauses playback.
 
 The choice matters: starting just before a tracking dropout, stepping by the video
 advances frame by frame, while stepping by the tracked whisker signal jumps across the
@@ -1107,7 +1107,16 @@ two kinds of parts:
 other filters' choices, and options that would leave none are disabled, so an empty
 result cannot be reached. A label shows "N of M match". Changing a filter applies
 immediately; if it hides the current segment the navigator moves to the next match after
-the playhead, and leaves the playhead alone when the current segment still matches.
+the playhead, and leaves the playhead alone when the current segment still matches. The
+next and previous buttons always follow the filter. A checkbox, always available, decides
+whether *playback* skips the segments the filter hides or plays straight through them.
+
+**Controls.** The top row holds playback and two clearly separate ways of moving, each with
+its own caption: **Segment** (previous and next, such as trials) and **Frame** (step by a
+chosen number of frames, with a selector for what defines a frame). The second row holds
+the filters. Section headings are generic; the names of the items (such as "Trial 46",
+"118 of 228 trials match") come from the project configuration (`label`, and `label_plural`
+where adding an "s" is wrong).
 
 **Timeline strip.** The grey bar is the shared timeline: its bands are segments, the
 amber band the current one, the blue band the selection. Beneath it, "Data coverage"

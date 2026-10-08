@@ -29,7 +29,8 @@ def build_window(project_path: str | Path) -> MainWindow:
     for name, spec in project.segmentation_specs.items():
         intervals = project.resources.intervals(spec["from"])
         context.navigator = SegmentNavigator(
-            bus, intervals, label=spec.get("label", "Segment"), index_attribute=spec.get("number_attribute")
+            bus, intervals, label=spec.get("label", "Segment"), index_attribute=spec.get("number_attribute"),
+            label_plural=spec.get("label_plural"),
         )
         break
 
