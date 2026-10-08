@@ -1936,3 +1936,12 @@ Improved Question / Experiment
 ```
 
 The first implementation should therefore optimize for scientific exploration and learning, while the architecture leaves room to grow into a broader research-software platform.
+
+### 34.3 Waiting for slow views
+
+Playback never waits while a view keeps producing frames, however late. If a visible view makes no
+progress for 0.4 s while playing (`View.stalled_for`), the `StallGuard` (`syncviz_app/stall.py`) sets
+`Timeline.holding`: the clock stops advancing but `playing` stays on, so playback resumes by itself when
+every view has caught up, and pressing pause during a hold is a real pause. The toolbar shows
+"Buffering <view>…" and the video's loading cue changes to "Buffering…". Nothing is held while paused, so
+scrubbing and stepping are never interrupted; the view shows its normal loading cue after 180 ms.

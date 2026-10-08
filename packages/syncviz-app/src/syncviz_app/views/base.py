@@ -40,6 +40,12 @@ class View(QWidget):
         extent = self.extent()
         return [] if extent is None else [extent]
 
+    def stalled_for(self, now: float) -> float:
+        """Seconds this view has been waiting, with no progress, for what it needs to show the
+        current playhead position (0 if it is up to date or can answer immediately). Slow views
+        such as a video decoding a distant frame override this; see `stall.py`."""
+        return 0.0
+
     def refresh(self, time: float) -> None:
         """Redraw for the playhead at `time` (shared time). Only called while visible."""
         raise NotImplementedError

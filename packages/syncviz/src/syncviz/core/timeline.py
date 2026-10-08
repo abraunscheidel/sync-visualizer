@@ -37,6 +37,7 @@ class Timeline:
         self.rate = rate                       # playback speed; 1.0 is real time
         self.time = start
         self.playing = False
+        self.holding: str | None = None        # why the clock is waiting (e.g. a view is loading); playing stays on
         self.selection: tuple[float, float] | None = None
         self.constraint: Constraint | None = None
         self._observers: list[Callable[[Timeline], None]] = []
@@ -85,8 +86,20 @@ class Timeline:
     def set_playing(self, playing: bool) -> None:
         if playing and self.time >= self.stop:
             self.time = self.start             # restart from the beginning at the end
+        if not playing:
+            self.holding = None                # a pause is a pause, not a wait
         if playing != self.playing:
             self.playing = playing
+            self._changed()
+
+    def hold(self, reason: str | None) -> None:
+        """Make the playhead wait (`reason` says why) or, with None, carry on.
+
+        Unlike pausing, this does not change `playing`: the user still wants playback, so it
+        resumes by itself when the hold is released, and pausing during a hold really pauses.
+        """
+        if reason != self.holding:
+            self.holding = reason
             self._changed()
 
     def select(self, start: float, stop: float) -> None:
@@ -99,7 +112,7 @@ class Timeline:
 
     def advance(self, dt: float) -> None:
         """Move the playhead by `dt` seconds of wall time. No-op unless playing."""
-        if not self.playing:
+        if not self.playing or self.holding:
             return
         proposed = self.time + dt * self.rate
         if proposed >= self.stop:

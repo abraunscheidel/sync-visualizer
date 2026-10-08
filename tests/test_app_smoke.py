@@ -386,3 +386,42 @@ def test_clicking_in_a_plot_follows_the_same_rule(window):
     assert window.context.timeline.time == 0.5
     assert plot.seek_from_time(4.0) is True
     assert window.context.timeline.time == 4.0
+
+
+def test_playback_waits_for_a_stalled_video_and_resumes_by_itself(window, qapp, monkeypatch):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    original = PlaybackReader.frame
+    slow = {"on": False}
+
+    def frame(self, n):
+        if slow["on"]:
+            time.sleep(1.2)                               # far longer than the stall threshold
+        return original(self, n)
+
+    monkeypatch.setattr(PlaybackReader, "frame", frame)
+    tl = window.context.timeline
+    window.context.bus.publish(Seek(0.0))
+    _pump(qapp, seconds=0.3)
+    slow["on"] = True
+    window.context.bus.publish(SetPlaying(True))
+    assert _pump(qapp, until=lambda: tl.holding), "playback never waited for the stalled video"
+    assert tl.playing
+    assert "Buffering" in window.navigation.status_label.text()
+    held_at = tl.time
+    _pump(qapp, seconds=0.2)
+    assert tl.time == held_at, "the playhead kept running while the video was stalled"
+    slow["on"] = False
+    assert _pump(qapp, until=lambda: not tl.holding), "playback did not resume once the video caught up"
+    assert _pump(qapp, until=lambda: tl.time > held_at)
+    assert window.navigation.status_label.text() == ""
+
+
+def test_scrubbing_while_paused_is_never_held(window, qapp, monkeypatch):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    original = PlaybackReader.frame
+    monkeypatch.setattr(PlaybackReader, "frame", lambda self, n: (time.sleep(0.8), original(self, n))[1])
+    window.context.bus.publish(Seek(0.5))
+    _pump(qapp, seconds=0.7)
+    assert window.context.timeline.holding is None and not window.context.timeline.playing

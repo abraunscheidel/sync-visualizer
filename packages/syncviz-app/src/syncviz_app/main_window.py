@@ -17,6 +17,7 @@ from syncviz_app.controls import FilterBar, NavigationBar
 from syncviz_app.info_panel import InfoPanel
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
+from syncviz_app.stall import StallGuard
 from syncviz_app.timeline_bar import TimelineBar
 from syncviz_app.views.base import View
 
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         # and a governor lowers them all if the interface starts to fall behind (see refresh.py).
         self.scheduler = RefreshScheduler(views)
         context.timeline.subscribe(lambda _t: self.scheduler.changed())
+        self.stall_guard = StallGuard(context.timeline, views)
         self._pump_timer = QTimer(self)
         self._pump_timer.setTimerType(Qt.TimerType.PreciseTimer)      # the governor reads this timer's lateness
         self._pump_timer.timeout.connect(self._pump)
@@ -114,7 +116,9 @@ class MainWindow(QMainWindow):
         self.context.timeline.advance(dt)
 
     def _pump(self) -> None:
-        self.scheduler.pump(time.perf_counter(), self.context.timeline.time)
+        now = time.perf_counter()
+        self.scheduler.pump(now, self.context.timeline.time)
+        self.stall_guard.check(now)
 
     def refresh_now(self) -> None:
         """Redraw every visible view immediately, ignoring rate limits."""

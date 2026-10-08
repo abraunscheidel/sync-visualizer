@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from time import perf_counter
 
 import numpy as np
 from PySide6.QtCore import QObject, QRectF, QTimer, Qt, Signal
@@ -156,9 +157,11 @@ class VideoView(View):
         layout.addWidget(self.widget)
         self._wanted = -1
         self._shown = -1
+        self._progress_at = perf_counter()     # when a frame last arrived, or the wait began
         self._cue_timer = QTimer(self)
         self._cue_timer.setSingleShot(True)
-        self._cue_timer.timeout.connect(lambda: self.widget.set_cue("Loading…"))
+        self._cue_timer.timeout.connect(
+            lambda: self.widget.set_cue("Buffering…" if context.timeline.holding else "Loading…"))
 
     def extent(self):
         return 0.0, self.n_frames / self.fps
@@ -175,6 +178,8 @@ class VideoView(View):
             return
         if n == self._wanted:
             return
+        if self._wanted == self._shown:                      # was up to date: the wait starts now
+            self._progress_at = perf_counter()
         self._wanted = n
         self.decoder.request(n)
         self._cue_timer.start(LOADING_CUE_DELAY_MS)
@@ -185,6 +190,7 @@ class VideoView(View):
         # Show every frame that finishes, even if the playhead has moved on a little since it
         # was requested. Discarding "stale" frames would show nothing at all whenever decoding
         # takes longer than the interval between requests, i.e. during any fast scrub.
+        self._progress_at = perf_counter()
         self._cue_timer.stop()
         self.widget.set_cue("")
         if n != self._wanted:
@@ -195,6 +201,11 @@ class VideoView(View):
         h, w = image.shape
         self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
         self._shown = n
+
+    def stalled_for(self, now: float) -> float:
+        if self._wanted == -1 or self._wanted == self._shown:
+            return 0.0
+        return max(0.0, now - self._progress_at)
 
     def close_view(self) -> None:
         self.decoder.stop()
