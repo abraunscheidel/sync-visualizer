@@ -20,7 +20,7 @@ HOLD_AFTER_S = 0.4          # no progress for this long, while playing, counts a
 class StallGuard:
     def __init__(self, timeline, views: Sequence, hold_after: float = HOLD_AFTER_S) -> None:
         self.timeline = timeline
-        self.views = list(views)
+        self.views = views if isinstance(views, list) else list(views)     # shared: views come and go
         self.hold_after = hold_after
 
     def check(self, now: float) -> None:

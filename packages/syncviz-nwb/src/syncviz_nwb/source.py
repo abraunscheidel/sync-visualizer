@@ -14,7 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
-from syncviz.sources import Source
+from syncviz.sources import DataEntry, Source
 
 _TIME_COLUMNS = {"start_time", "stop_time"}
 
@@ -38,6 +38,34 @@ class NWBSource(Source):
                 names += [f"processing/{module_name}/{name}" for name in module.data_interfaces]
             names += [f"intervals/{name}" for name in nwb.intervals]
             return names
+
+    def catalog(self) -> list[DataEntry]:
+        """Time intervals, event containers and one-dimensional time series in the file."""
+        from pynwb import TimeSeries as NWBTimeSeries
+        from pynwb.behavior import BehavioralEvents
+        from pynwb.epoch import TimeIntervals
+
+        def plottable(ts) -> bool:
+            return len(getattr(ts.data, "shape", ())) == 1
+
+        entries: list[DataEntry] = []
+        with self._open() as io:
+            nwb = io.read()
+            objects = [(f"acquisition/{n}", o) for n, o in nwb.acquisition.items()]
+            for module_name, module in nwb.processing.items():
+                objects += [(f"processing/{module_name}/{n}", o) for n, o in module.data_interfaces.items()]
+            objects += [(f"intervals/{n}", o) for n, o in nwb.intervals.items()]
+            for path, obj in objects:
+                if isinstance(obj, TimeIntervals):
+                    entries.append(DataEntry(path, "intervals"))
+                elif hasattr(obj, "time_series"):
+                    members = tuple(n for n, ts in obj.time_series.items() if plottable(ts))
+                    if members:
+                        kind = "events" if isinstance(obj, BehavioralEvents) else "timeseries"
+                        entries.append(DataEntry(path, kind, members))
+                elif isinstance(obj, NWBTimeSeries) and plottable(obj):
+                    entries.append(DataEntry(path, "timeseries", (obj.name,)))
+        return entries
 
     @staticmethod
     def _resolve(nwb, path: str) -> Any:

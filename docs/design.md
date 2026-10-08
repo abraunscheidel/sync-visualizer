@@ -1952,3 +1952,15 @@ scrubbing and stepping are never interrupted; the view shows its normal loading 
 simulate slow decoding (50 ms to 1.5 s per frame), stall the next frame for 3 s, and a live status line
 (playing/holding, governor scale, how long each view has waited). Off by default. Views opt in by exposing
 `simulated_delay_s` and `stall_once`, so the window stays source-agnostic.
+
+### 28.2 Adding, removing and switching views
+
+The left sidebar has a **Views** list above the project information. Each view has a checkbox that
+shows or hides its panel (it stays loaded, so switching between five views is instant and nothing is
+re-read) and a double-click brings it to the front. **Add view…** opens a dialog listing what the
+project's sources can feed: each source offers a `catalog()` of `DataEntry` (path, kind, members) and each
+view type offers `candidates(catalog)` (so the app knows no view type by name; a plugin view appears in the
+dialog by implementing it). **Remove** discards a view. Both go through `MainWindow.add_view/remove_view`, which
+update colours, extents, the timeline's range, the frame-definition choices and the coverage strip
+(`view_factory.py`). Views added in the UI last for the session; they are not written back to the project
+file yet.

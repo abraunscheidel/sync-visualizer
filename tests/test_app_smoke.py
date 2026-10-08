@@ -15,6 +15,7 @@ pytest.importorskip("pynwb")
 
 from pynwb import NWBFile, NWBHDF5IO
 from pynwb.behavior import BehavioralEvents, BehavioralTimeSeries
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from syncviz.core import Seek, SelectSegment, SetPlaying, StepSegment
@@ -442,3 +443,86 @@ def test_debug_menu_can_slow_the_video_and_stall_it_once(window, qapp):
     window.context.bus.publish(Seek(0.5))
     assert _pump(qapp, until=lambda: video.decoder.delay_once_s == 0, seconds=0)
     assert "paused" in debug.text() and "Clip" in debug.text()
+
+
+# -- adding, removing and switching views from the sidebar ---------------------------------
+def test_the_catalog_lists_what_each_source_can_show(window):
+    catalog = window.source_catalog()
+    kinds = {e.kind for e in catalog["session"]}
+    assert {"intervals", "events", "timeseries"} <= kinds
+    assert [e.kind for e in catalog["video"]] == ["video"]
+
+
+def test_the_add_dialog_offers_each_kind_of_view_the_data_can_feed(window):
+    from syncviz_app.add_view_dialog import AddViewDialog
+
+    dialog = AddViewDialog(window.source_catalog())
+    assert {"Video", "Time series plot", "Events and intervals"} <= set(dialog.groups)
+    assert dialog.spec() is None and not dialog.ok.isEnabled()
+    group = dialog.tree.topLevelItem(0)
+    dialog.tree.setCurrentItem(group.child(0))
+    assert dialog.ok.isEnabled() and dialog.spec()["title"]
+
+
+def test_adding_a_view_from_a_candidate_shows_it_everywhere_it_belongs(window, qapp):
+    from syncviz_app.add_view_dialog import collect_candidates
+
+    spec = next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
+    before = len(window.views)
+    view = window.add_view(spec)
+    assert view is not None and len(window.views) == len(window.docks) == before + 1
+    assert view.title in window.context.colors and view.title in window.context.extents
+    assert view.title in window.timeline_bar._names
+    bases = [window.navigation.base.itemText(i) for i in range(window.navigation.base.count())]
+    assert view.title in bases
+    assert window.views_panel.list.count() == before + 1
+    _pump(qapp, seconds=0.2)
+    assert view.isVisible()
+
+
+def test_a_second_view_of_the_same_data_gets_its_own_title_and_colour(window):
+    spec = {"type": "video", "title": "Clip", "source": "video"}
+    view = window.add_view(spec)
+    assert view.title != "Clip" and view.title.startswith("Clip")
+    assert window.context.colors[view.title] != window.context.colors["Clip"]
+
+
+def test_a_view_that_cannot_be_created_leaves_a_note_and_changes_nothing(window):
+    before = len(window.views)
+    assert window.add_view({"type": "timeseries", "title": "Broken", "series": {"from": "session:nope", "member": "x"}}) is None
+    assert len(window.views) == before and any("Broken" in n for n in window.context.notes)
+
+
+def test_removing_a_view_removes_it_from_the_window_and_the_context(window, qapp):
+    video = next(v for v in window.views if v.type_name == "video")
+    title = video.title
+    window.remove_view(video)
+    _pump(qapp, seconds=0.1)
+    assert video not in window.views and title not in window.context.colors and title not in window.context.extents
+    assert title not in window.context.stepper.bases
+    assert window.context.stepper.reference in window.context.stepper.bases
+    assert title not in window.timeline_bar._names
+    window.context.bus.publish(Seek(1.0))                 # the remaining views keep working
+    window.refresh_now()
+
+
+def test_views_can_be_switched_off_and_on_from_the_sidebar_without_being_removed(window, qapp):
+    panel = window.views_panel
+    item = panel.list.item(1)
+    view = item.data(Qt.ItemDataRole.UserRole)
+    item.setCheckState(Qt.CheckState.Unchecked)
+    _pump(qapp, seconds=0.1)
+    assert not view.isVisible() and view in window.views
+    item.setCheckState(Qt.CheckState.Checked)
+    _pump(qapp, seconds=0.1)
+    assert view.isVisible()
+
+
+def test_closing_a_panel_unticks_it_in_the_sidebar(window, qapp):
+    window.docks[1].close()
+    _pump(qapp, seconds=0.1)
+    assert window.views_panel.list.item(1).checkState() == Qt.CheckState.Unchecked
+
+
+def test_the_views_menu_is_gone_because_the_sidebar_replaces_it(window):
+    assert "Views" not in [a.text().replace("&", "") for a in window.menuBar().actions()]

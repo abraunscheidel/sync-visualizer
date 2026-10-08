@@ -6,11 +6,25 @@ import numpy as np
 import pyqtgraph as pg
 
 from syncviz.core import SampleTimes
+from syncviz_app.views.base import Candidate
 from syncviz_app.views.timewindow import TimeWindowView, break_at_gaps
 
 
 class TimeSeriesView(TimeWindowView):
     type_name = "timeseries"
+    display_name = "Time series plot"
+
+    @classmethod
+    def candidates(cls, catalog):
+        out = []
+        for source, entries in catalog.items():
+            for entry in entries:
+                if entry.kind == "timeseries":
+                    for member in entry.members:
+                        spec = {"type": cls.type_name, "title": member,
+                                "series": {"from": f"{source}:{entry.path}", "member": member}}
+                        out.append(Candidate(f"{member}   ({source}: {entry.path})", spec))
+        return out
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)

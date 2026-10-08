@@ -19,7 +19,6 @@ STALL_ONCE_S = 3.0
 class DebugTools:
     def __init__(self, window) -> None:
         self.window = window
-        self.slowable = [v for v in window.views if hasattr(v, "simulated_delay_s")]
         menu = window.menuBar().addMenu("&Debug")
 
         if self.slowable:
@@ -49,6 +48,10 @@ class DebugTools:
         self._timer = QTimer(window)
         self._timer.setInterval(200)
         self._timer.timeout.connect(self.update_readout)
+
+    @property
+    def slowable(self) -> list:
+        return [v for v in self.window.views if hasattr(v, "simulated_delay_s")]
 
     def set_delay(self, seconds: float) -> None:
         for view in self.slowable:

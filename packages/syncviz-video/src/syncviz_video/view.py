@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz.core import RegularGrid
-from syncviz_app.views.base import View
+from syncviz_app.views.base import Candidate, View
 from syncviz_video.frame_index import FrameIndex
 from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
 
@@ -149,6 +149,12 @@ class _FrameWidget(QWidget):
 
 class VideoView(View):
     type_name = "video"
+    display_name = "Video"
+
+    @classmethod
+    def candidates(cls, catalog):
+        return [Candidate(f"{source}", {"type": cls.type_name, "title": f"{source}", "source": source})
+                for source, entries in catalog.items() if any(e.kind == "video" for e in entries)]
     default_refresh_hz = 60.0          # the picture is what you watch, so it gets the full display rate
 
     def __init__(self, context, spec: dict) -> None:
@@ -237,4 +243,5 @@ class VideoView(View):
         return max(0.0, now - self._progress_at)
 
     def close_view(self) -> None:
+        self.context.timeline.unsubscribe(self._on_timeline)
         self.decoder.stop()

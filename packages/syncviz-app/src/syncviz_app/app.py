@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from syncviz import plugins
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL
-from syncviz_app.colors import view_color
 from syncviz_app.context import AppContext
 from syncviz_app.main_window import MainWindow
-from syncviz_app.project import load_project, split_ref
+from syncviz_app.project import load_project
+from syncviz_app.view_factory import create_view, fit_timeline, register_view
 from syncviz_app.views.base import View
 
 
@@ -36,23 +35,13 @@ def build_window(project_path: str | Path, debug: bool = False) -> MainWindow:
 
     views: list[View] = []
     for spec in project.view_specs:
-        try:
-            view_class = plugins.load("views", spec["type"])
-        except KeyError as exc:
-            context.notes.append(f"view {spec.get('title') or spec['type']!r} skipped: {exc.args[0]}")
+        view = create_view(context, spec)
+        if view is None:
             continue
-        view = view_class(context, spec)
         views.append(view)
-        context.colors[view.title] = view_color(len(views) - 1)
-        extent = view.extent()
-        if extent is not None:
-            context.extents[view.title] = extent
-            context.coverage[view.title] = view.coverage()
+        register_view(context, view, len(views) - 1)
 
-    # The timeline spans everything: no source defines its start or end.
-    if context.extents:
-        lows, highs = zip(*context.extents.values())
-        timeline.set_range(min(lows), max(highs))
+    fit_timeline(context)
 
     if context.navigator is not None:
         context.navigator.select(context.navigator.index)      # move the playhead to the first segment

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from syncviz.sources import Source
+from syncviz.sources import DataEntry, Source
 
 
 class VideoSource(Source):
@@ -20,3 +20,6 @@ class VideoSource(Source):
 
     def describe(self) -> list[str]:
         return ["video"]
+
+    def catalog(self) -> list[DataEntry]:
+        return [DataEntry("video", "video")]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 
+from syncviz_app.views.base import Candidate
 from syncviz_app.views.timewindow import TimeWindowView
 
 TICK_HALF_HEIGHT = 0.35
@@ -13,6 +14,24 @@ BAR_WIDTH_PX = 9
 
 class TracksView(TimeWindowView):
     type_name = "tracks"
+    display_name = "Events and intervals"
+
+    @classmethod
+    def candidates(cls, catalog):
+        out = []
+        for source, entries in catalog.items():
+            for entry in entries:
+                ref = f"{source}:{entry.path}"
+                name = entry.path.rsplit("/", 1)[-1]
+                if entry.kind == "events":
+                    rows = [{"name": m, "kind": "events", "from": ref, "member": m} for m in entry.members]
+                elif entry.kind == "intervals":
+                    rows = [{"name": name, "kind": "intervals", "from": ref}]
+                else:
+                    continue
+                out.append(Candidate(f"{name}   ({source}: {entry.path})",
+                                     {"type": cls.type_name, "title": name, "rows": rows}))
+        return out
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)

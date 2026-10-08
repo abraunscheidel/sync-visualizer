@@ -34,8 +34,7 @@ class TimelineBar(QWidget):
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
-        self._names = list(context.extents)                 # row order
-        self.setFixedHeight(ROWS_TOP + max(len(self._names), 1) * ROW_PITCH + 6 + LABELS_HEIGHT)
+        self.rebuild()
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)                         # tooltips while hovering, not just dragging
@@ -43,6 +42,12 @@ class TimelineBar(QWidget):
         context.timeline.subscribe(self._on_timeline)
         if context.navigator is not None:
             context.navigator.subscribe(lambda _n: self.update())
+
+    def rebuild(self) -> None:
+        """Recompute the coverage rows, after views have been added or removed."""
+        self._names = list(self.context.extents)            # row order
+        self.setFixedHeight(ROWS_TOP + max(len(self._names), 1) * ROW_PITCH + 6 + LABELS_HEIGHT)
+        self.update()
 
     def _on_timeline(self, tl) -> None:
         now = time.perf_counter()

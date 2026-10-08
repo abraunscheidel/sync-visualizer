@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import QElapsedTimer, QTimer, Qt
-from PySide6.QtWidgets import QDockWidget, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
 from syncviz_app.context import AppContext
 from syncviz_app.debug import DebugTools
@@ -20,6 +20,8 @@ from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.stall import StallGuard
 from syncviz_app.timeline_bar import TimelineBar
+from syncviz_app.view_factory import create_view, fit_timeline, register_view, unique_title, unregister_view
+from syncviz_app.views_panel import ViewsPanel
 from syncviz_app.views.base import View
 
 PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so this only sets its granularity
@@ -29,6 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self, project: Project, context: AppContext, views: list[View], debug: bool = False) -> None:
         super().__init__()
         self.project, self.context, self.views = project, context, views
+        self._colors_used = len(views)                       # colours are never reused, even after a removal
         self.setWindowTitle(f"Sync Visualizer — {project.name}")
         self.resize(1500, 900)
 
@@ -45,30 +48,22 @@ class MainWindow(QMainWindow):
             self.filter_bar = FilterBar(context, filter_attrs)
             self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.filter_bar)
 
+        # The sidebar: which views are showing, above what the project contains.
         self.info = InfoPanel(project, context)
+        self.docks: list[QDockWidget] = []
+        self.view_host = QMainWindow()
+        self.views_panel: ViewsPanel | None = None
+        sidebar = QSplitter(Qt.Orientation.Vertical)
         info_dock = QDockWidget("Project", self)
-        info_dock.setWidget(self.info)
+        info_dock.setWidget(sidebar)
         info_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)   # always present
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, info_dock)
 
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
-        self.view_host = QMainWindow()
         self.view_host.setWindowFlags(Qt.WindowType.Widget)
         self.view_host.setDockNestingEnabled(True)
-        self.docks: list[QDockWidget] = []
         for i, view in enumerate(views):
-            dock = QDockWidget(view.title)
-            dock.setWidget(view)
-            colour = context.colors.get(view.title)
-            if colour:      # the stripe matches this view's line in the timeline's data coverage
-                dock.setStyleSheet(f"QDockWidget::title {{ border-left: 6px solid {colour}; padding-left: 6px; }}")
-            dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
-            area = {"left": Qt.DockWidgetArea.LeftDockWidgetArea,
-                    "right": Qt.DockWidgetArea.RightDockWidgetArea,
-                    "bottom": Qt.DockWidgetArea.BottomDockWidgetArea}.get(
-                        view.spec.get("area", "left" if i == 0 else "right"), Qt.DockWidgetArea.RightDockWidgetArea)
-            self.view_host.addDockWidget(area, dock)
-            self.docks.append(dock)
+            self.docks.append(self._make_dock(view, view.spec.get("area", "left" if i == 0 else "right")))
         QTimer.singleShot(0, self._apply_initial_sizes)
 
         central = QWidget()
@@ -80,9 +75,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.timeline_bar)
         self.setCentralWidget(central)
 
-        view_menu = self.menuBar().addMenu("&Views")
-        for dock in self.docks:
-            view_menu.addAction(dock.toggleViewAction())
+        self.views_panel = ViewsPanel(self)
+        sidebar.addWidget(self.views_panel)
+        sidebar.addWidget(self.info)
+        sidebar.setStretchFactor(1, 1)
 
         # Views redraw from a scheduler, not on every playhead event. Each has its own rate,
         # and a governor lowers them all if the interface starts to fall behind (see refresh.py).
@@ -101,6 +97,68 @@ class MainWindow(QMainWindow):
         self._play_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._play_timer.timeout.connect(self._tick)
         self._play_timer.start(PLAYBACK_TICK_MS)
+
+    def _make_dock(self, view: View, area: str) -> QDockWidget:
+        dock = QDockWidget(view.title)
+        dock.setWidget(view)
+        colour = self.context.colors.get(view.title)
+        if colour:      # the stripe matches this view's line in the timeline's data coverage
+            dock.setStyleSheet(f"QDockWidget::title {{ border-left: 6px solid {colour}; padding-left: 6px; }}")
+        dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        where = {"left": Qt.DockWidgetArea.LeftDockWidgetArea,
+                 "right": Qt.DockWidgetArea.RightDockWidgetArea,
+                 "bottom": Qt.DockWidgetArea.BottomDockWidgetArea}.get(area, Qt.DockWidgetArea.RightDockWidgetArea)
+        self.view_host.addDockWidget(where, dock)
+        return dock
+
+    # -- adding and removing views ---------------------------------------------------------
+    def source_catalog(self) -> dict:
+        """What every source offers, by source name (see Source.catalog)."""
+        return {name: source.catalog() for name, source in self.context.resources.sources.items()}
+
+    def choose_view_to_add(self) -> None:
+        from syncviz_app.add_view_dialog import AddViewDialog
+
+        dialog = AddViewDialog(self.source_catalog(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.spec() is not None:
+            self.add_view(dialog.spec())
+
+    def add_view(self, spec: dict) -> View | None:
+        """Create a view from a spec and show it. Returns None (with a note in the project panel) if
+        it could not be created."""
+        spec = {**spec, "title": unique_title(self.context, spec.get("title") or spec["type"])}
+        view = create_view(self.context, spec)
+        if view is None:
+            self._views_changed()
+            return None
+        self.views.append(view)
+        register_view(self.context, view, self._colors_used)
+        self._colors_used += 1
+        self.docks.append(self._make_dock(view, spec.get("area", "right")))
+        self._views_changed()
+        return view
+
+    def remove_view(self, view: View) -> None:
+        if view not in self.views:
+            return
+        i = self.views.index(view)
+        dock = self.docks.pop(i)
+        self.views.pop(i)
+        self.view_host.removeDockWidget(dock)
+        dock.deleteLater()
+        view.close_view()
+        unregister_view(self.context, view)
+        self._views_changed()
+
+    def _views_changed(self) -> None:
+        """Bring everything that lists or depends on the views up to date."""
+        fit_timeline(self.context)
+        self.timeline_bar.rebuild()
+        self.navigation.refresh_bases()
+        self.info.rebuild()
+        if self.views_panel is not None:
+            self.views_panel.rebuild()
+        self.scheduler.changed()
 
     def _apply_initial_sizes(self) -> None:
         """Give the first (left) view about half the width; stack the rest evenly on the right."""

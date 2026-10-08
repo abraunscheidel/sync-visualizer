@@ -48,6 +48,10 @@ class Timeline:
     def subscribe(self, observer: Callable[[Timeline], None]) -> None:
         self._observers.append(observer)
 
+    def unsubscribe(self, observer: Callable[[Timeline], None]) -> None:
+        if observer in self._observers:
+            self._observers.remove(observer)
+
     def _changed(self) -> None:
         for observer in list(self._observers):
             observer(self)

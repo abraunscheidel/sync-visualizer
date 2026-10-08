@@ -9,11 +9,23 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QWidget
 
+from dataclasses import dataclass
+
+from syncviz.sources import DataEntry
 from syncviz_app.context import AppContext
+
+
+@dataclass
+class Candidate:
+    """A view the user could add: what to call it in the dialog, and the spec that creates it."""
+
+    label: str
+    spec: dict
 
 
 class View(QWidget):
     type_name = ""
+    display_name = ""              # what the "add a view" dialog calls this kind of view
     default_refresh_hz = 30.0      # redraws per second while the playhead moves; see refresh.py
 
     def __init__(self, context: AppContext, spec: dict) -> None:
@@ -23,6 +35,12 @@ class View(QWidget):
         self.title: str = spec.get("title") or self.type_name
         # Upper limit on how often this view redraws. A project can override it per view.
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
+
+    @classmethod
+    def candidates(cls, catalog: dict[str, list[DataEntry]]) -> list[Candidate]:
+        """The views of this type that the available data (by source name) could feed. Types that
+        return nothing can only be added through the project file."""
+        return []
 
     def extent(self) -> tuple[float, float] | None:
         """Range of shared time this view has data for, or None if it has no time extent."""

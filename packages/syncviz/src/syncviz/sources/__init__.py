@@ -1,3 +1,3 @@
-from syncviz.sources.base import Source
+from syncviz.sources.base import DataEntry, Source
 
-__all__ = ["Source"]
+__all__ = ["DataEntry", "Source"]

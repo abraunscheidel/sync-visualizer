@@ -149,6 +149,19 @@ class NavigationBar(QToolBar):
         for box in (self.count, self.interval):
             box.editingFinished.connect(box.clearFocus)
 
+    def refresh_bases(self) -> None:
+        """Re-list what can define a frame, after views have been added or removed."""
+        stepper = self.context.stepper
+        if stepper is None:
+            return
+        self.base.blockSignals(True)
+        self.base.clear()
+        for name in stepper.bases:
+            self.base.addItem(name)
+        self.base.setCurrentText(stepper.reference or "")
+        self.base.blockSignals(False)
+        self._interval_action.setVisible(self.base.currentText() == FIXED_INTERVAL)
+
     def _base_changed(self, name: str) -> None:
         self.context.stepper.reference = name
         self._interval_action.setVisible(name == FIXED_INTERVAL)

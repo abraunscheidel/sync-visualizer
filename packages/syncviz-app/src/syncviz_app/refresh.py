@@ -64,7 +64,7 @@ class Refreshable(Protocol):
 
 class RefreshScheduler:
     def __init__(self, views: Sequence[Refreshable], governor: Governor | None = None) -> None:
-        self.views = list(views)
+        self.views = views if isinstance(views, list) else list(views)     # shared: views come and go
         self.governor = governor or Governor()
         self._version = 0                                    # bumped whenever the playhead changes
         self._drawn = {id(v): -1 for v in self.views}        # version each view last drew
@@ -80,9 +80,9 @@ class RefreshScheduler:
         self.governor.tick(now)
         for view in self.views:
             key = id(view)
-            if self._drawn[key] == self._version or not view.isVisible():
+            if self._drawn.get(key, -1) == self._version or not view.isVisible():
                 continue                                     # up to date, or not on screen
-            if not force and now < self._due[key]:
+            if not force and now < self._due.get(key, 0.0):
                 continue
             view.refresh(time_value)
             self._drawn[key] = self._version
@@ -90,4 +90,4 @@ class RefreshScheduler:
             # milliseconds, so scheduling from "now" would round every rate down to a multiple
             # of the pump interval (a 60 Hz view would get ~41 Hz). If we are already behind,
             # restart from now rather than drawing a burst to catch up.
-            self._due[key] = max(self._due[key] + self.interval_for(view), now)
+            self._due[key] = max(self._due.get(key, now) + self.interval_for(view), now)
