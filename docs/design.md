@@ -1203,7 +1203,19 @@ session would be orders of magnitude larger than memory (about 137 GB for
 - **Random access.** To reach frame N, seek to the latest keyframe at or before N
   and decode forward. Only that group of pictures is read from disk.
 - **Bounded memory.** Callers receive only the frames they ask for. A
-  byte-bounded cache around the playhead and background prefetch are planned.
+  byte-bounded cache (default 400 MB, least recently used out first) keeps every frame
+  decoded on the way to the one requested, so stepping back over frames just played
+  costs nothing. The frame asked for is always returned, whatever the budget.
+  Background prefetch is not built.
+- **Latest request wins, but never discard a finished frame.** A view asks for the
+  frame under the playhead; the decoder always works on the most recent request and
+  skips older ones. A frame that finishes after the playhead has moved on must still
+  be shown. Dropping such "stale" frames froze the picture whenever decoding took
+  longer than the interval between redraws, which is true of any real video. A test
+  with deliberately slow decoding guards against this.
+- **Short forward jumps continue the running decode** and skip the frames in
+  between, instead of re-seeking, when that is cheaper (during playback the playhead
+  moves several frames per redraw).
 - **Interface.** A `Video` resource exposes frame count, rate and frame reads.
   Views never see the container, the codec, or where the bytes live.
 
@@ -1219,6 +1231,10 @@ while another full-video decode was running on the same machine:
 | Sequential decode, reading the luma plane directly | about 1,450-1,580 frames/s |
 | Raw decode only (8 cores) | about 1,600-2,000 frames/s |
 | Conversion to RGB (what a display needs) | about 380 frames/s |
+| Step backward one frame, no cache | median 85 ms, p95 130 ms |
+| Step backward one frame, with cache | 0 ms (cache hit) |
+| Jump to a random far frame | median 38-49 ms, p95 76-101 ms |
+| Video frames shown in the window during 1x playback | about 48 per second (display refresh limits this to 60 at most) |
 | Content check | frame N read by seek matches frame N from the full decode, on 48 frames including blackout boundaries |
 
 Raw decoding is not the bottleneck. The per-frame format conversion was: it ran

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz_app.views.base import View
 from syncviz_video.frame_index import FrameIndex
-from syncviz_video.frame_reader import PlaybackReader
+from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
 
 LOADING_CUE_DELAY_MS = 180      # only hint that a frame is on its way if it takes this long
 FADE_STEP = 0.18
@@ -26,9 +26,9 @@ class _Decoder(QObject):
     frame_ready = Signal(int, object)
     failed = Signal(str)
 
-    def __init__(self, path, index: FrameIndex) -> None:
+    def __init__(self, path, index: FrameIndex, cache_bytes: int) -> None:
         super().__init__()
-        self._path, self._index = path, index
+        self._path, self._index, self._cache_bytes = path, index, cache_bytes
         self._cond = threading.Condition()
         self._target: int | None = None
         self._stop = False
@@ -48,7 +48,7 @@ class _Decoder(QObject):
         self._thread.join(timeout=3)
 
     def _run(self) -> None:
-        reader = PlaybackReader(self._path, self._index)       # created here: readers are not thread-safe
+        reader = PlaybackReader(self._path, self._index, self._cache_bytes)   # created here: not thread-safe
         self.native_luma = reader.native_luma
         try:
             while True:
@@ -144,7 +144,8 @@ class VideoView(View):
         self.fps = float(source.fps)
         self.index = FrameIndex.build(source.path, cache=context.cache)
         self.n_frames = self.index.n_frames
-        self.decoder = _Decoder(source.path, self.index)
+        cache_bytes = int(float(spec.get("cache_mb", DEFAULT_CACHE_BYTES / 2**20)) * 2**20)
+        self.decoder = _Decoder(source.path, self.index, cache_bytes)
         self.decoder.frame_ready.connect(self._on_frame)
         self.decoder.failed.connect(lambda msg: context.notes.append(f"video: {msg}"))
         self.widget = _FrameWidget()

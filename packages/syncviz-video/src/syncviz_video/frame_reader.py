@@ -7,6 +7,7 @@ is bounded by what the caller asks for.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import Iterator
 
@@ -95,25 +96,48 @@ class FrameReader:
 SEEK_OVERHEAD_FRAMES = 30
 
 
-class PlaybackReader:
-    """Frame access tuned for a moving playhead.
+DEFAULT_CACHE_BYTES = 400 * 1024 * 1024
 
-    The same frame again returns the stored copy. A later frame continues the running
-    decode, skipping the frames in between, when that is cheaper than seeking. Anything
-    else (backward, or far ahead) seeks to the nearest keyframe and starts a new run.
+
+class PlaybackReader:
+    """Frame access tuned for a moving playhead, with a memory-bounded frame cache.
+
+    Every frame decoded on the way to the one asked for is kept, up to a byte budget, least
+    recently used first out. So after playing or scrubbing forward, stepping back over the
+    same frames costs nothing.
+
+    On a miss, a later frame continues the running decode (skipping the frames in between)
+    when that is cheaper than seeking; anything else seeks back to the nearest keyframe.
+    The frame asked for is always returned, even if the budget is smaller than one frame.
     Not thread-safe: use from one thread.
     """
 
-    def __init__(self, path: str | Path, index: FrameIndex) -> None:
+    def __init__(self, path: str | Path, index: FrameIndex, max_cache_bytes: int = DEFAULT_CACHE_BYTES) -> None:
         self._reader = FrameReader(path, index)
         self.n_frames = index.n_frames
         self.native_luma = self._reader.native_luma
         self._run: Iterator[tuple[int, np.ndarray]] | None = None
-        self._last_n = -1
-        self._last: np.ndarray | None = None
+        self._run_pos = -1                       # last frame the running decode produced
+        self._cache: OrderedDict[int, np.ndarray] = OrderedDict()
+        self._cache_bytes = 0
+        self._max_cache_bytes = max_cache_bytes
 
     def close(self) -> None:
         self._reader.close()
+        self._cache.clear()
+
+    @property
+    def cached_frames(self) -> list[int]:
+        return sorted(self._cache)
+
+    def _remember(self, n: int, image: np.ndarray) -> None:
+        if n in self._cache:
+            return
+        self._cache[n] = image
+        self._cache_bytes += image.nbytes
+        while self._cache_bytes > self._max_cache_bytes and len(self._cache) > 1:
+            _, evicted = self._cache.popitem(last=False)
+            self._cache_bytes -= evicted.nbytes
 
     def _continuing_is_cheaper(self, n: int) -> bool:
         """Whether decoding on from the current position beats seeking back to a keyframe.
@@ -121,25 +145,36 @@ class PlaybackReader:
         Continuing costs one decode per frame between here and `n`. Re-seeking costs the
         frames from the keyframe up to `n`, plus a fixed overhead for the seek itself.
         """
-        if self._run is None or n <= self._last_n:
+        if self._run is None or n <= self._run_pos:
             return False
         keyframe = self._reader.index.keyframe_at_or_before(n)
-        return (n - self._last_n) <= (n - keyframe) + SEEK_OVERHEAD_FRAMES
+        return (n - self._run_pos) <= (n - keyframe) + SEEK_OVERHEAD_FRAMES
+
+    def _start_run_for(self, n: int) -> None:
+        # Start at the keyframe, not at `n`, so the frames before `n` are cached too.
+        keyframe = self._reader.index.keyframe_at_or_before(n)
+        self._run = self._reader.iter_frames(keyframe)
+        self._run_pos = keyframe - 1
 
     def frame(self, n: int) -> np.ndarray:
         if not 0 <= n < self.n_frames:
             raise IndexError(f"frame {n} is outside 0..{self.n_frames - 1}")
-        if n == self._last_n and self._last is not None:
-            return self._last
+        hit = self._cache.get(n)
+        if hit is not None:
+            self._cache.move_to_end(n)
+            return hit
         if not self._continuing_is_cheaper(n):
-            self._run = self._reader.iter_frames(n)        # seek once, then decode forward
-            self._last_n = n - 1
+            self._start_run_for(n)
         try:
-            while self._last_n < n:                        # step forward, discarding skipped frames
+            while self._run_pos < n:
                 got, image = next(self._run)
-                self._last_n, self._last = got, image
-        except StopIteration:
-            self._run = self._reader.iter_frames(n)
-            got, image = next(self._run)
-            self._last_n, self._last = got, image
-        return self._last
+                self._run_pos = got
+                self._remember(got, image)
+        except StopIteration:                   # the decode ended early; start over once
+            self._start_run_for(n)
+            while self._run_pos < n:
+                got, image = next(self._run)
+                self._run_pos = got
+                self._remember(got, image)
+        self._cache.move_to_end(n)
+        return self._cache[n]

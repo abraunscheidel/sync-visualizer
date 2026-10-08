@@ -173,15 +173,49 @@ def test_short_forward_jumps_continue_instead_of_reseeking(video):
     from syncviz_video.frame_reader import PlaybackReader
 
     index = FrameIndex.build(video)
-    reader = PlaybackReader(video, index)
+    reader = PlaybackReader(video, index, max_cache_bytes=0)     # keep only the latest frame
     try:
         reader.frame(10)                      # first access seeks
         seeks = _count_seeks(reader)
         for n in [11, 14, 17, 20, 23]:        # playback-like: a few frames ahead each time
             assert_is_frame(reader.frame(n), n)
         assert seeks == []
-        reader.frame(5)                       # backward must seek
+        reader.frame(5)                       # nothing cached, so going backward must seek
         assert len(seeks) == 1
+    finally:
+        reader.close()
+
+
+def test_frames_decoded_on_the_way_are_cached_so_stepping_back_is_free(video):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    index = FrameIndex.build(video)
+    reader = PlaybackReader(video, index)
+    try:
+        reader.frame(57)                      # lands mid-GOP: decodes from the keyframe up to 57
+        seeks = _count_seeks(reader)
+        for n in range(57, 49, -1):           # step backward one frame at a time
+            assert_is_frame(reader.frame(n), n)
+        assert seeks == []
+        # Frames skipped over by a forward jump are cached too.
+        reader.frame(60)
+        assert_is_frame(reader.frame(59), 59)
+        assert seeks == []
+    finally:
+        reader.close()
+
+
+def test_cache_respects_its_byte_budget_and_stays_correct(video):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    index = FrameIndex.build(video)
+    frame_bytes = 64 * 48
+    reader = PlaybackReader(video, index, max_cache_bytes=frame_bytes * 5)
+    try:
+        for n in [0, 20, 40, 60, 80, 100, 119, 70, 71, 5]:
+            assert_is_frame(reader.frame(n), n)
+            assert len(reader.cached_frames) <= 5
+        assert 5 in reader.cached_frames      # the frame just asked for is always kept
     finally:
         reader.close()
 
