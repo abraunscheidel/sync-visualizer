@@ -137,6 +137,7 @@ class _FrameWidget(QWidget):
 
 class VideoView(View):
     type_name = "video"
+    default_refresh_hz = 60.0          # the picture is what you watch, so it gets the full display rate
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)

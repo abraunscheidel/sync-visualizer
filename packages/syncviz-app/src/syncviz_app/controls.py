@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QComboBox, QLabel, QToolBar
 
@@ -9,6 +10,7 @@ from syncviz.core import SetPlaying, StepSegment
 from syncviz_app.context import AppContext
 
 SPEEDS = [0.1, 0.25, 0.5, 1.0, 2.0]
+TIME_LABEL_INTERVAL_MS = 50
 ALL = "All"
 
 
@@ -70,8 +72,15 @@ class ControlsBar(QToolBar):
         self.time_label.setMinimumWidth(110)
         self.addSeparator()
         self.addWidget(self.time_label)
+        # While playing the time changes every tick; the label only needs to keep up with the eye.
+        self._label_timer = QTimer(self)
+        self._label_timer.setInterval(TIME_LABEL_INTERVAL_MS)
+        self._label_timer.timeout.connect(self._refresh_time_label)
         tl.subscribe(self._on_timeline)
         self._on_timeline(tl)
+
+    def _refresh_time_label(self) -> None:
+        self.time_label.setText(f"{self.context.timeline.time:10.3f} s")
 
     def _on_timeline(self, tl) -> None:
         if self.play.isChecked() != tl.playing:
@@ -79,7 +88,12 @@ class ControlsBar(QToolBar):
             self.play.setChecked(tl.playing)
             self.play.blockSignals(False)
         self.play.setText("Pause" if tl.playing else "Play")
-        self.time_label.setText(f"{tl.time:10.3f} s")
+        if tl.playing:
+            if not self._label_timer.isActive():
+                self._label_timer.start()
+        else:
+            self._label_timer.stop()
+            self._refresh_time_label()              # seeks and pauses show immediately
 
     def _update_segment_label(self) -> None:
         nav = self.context.navigator

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
@@ -12,6 +14,7 @@ from syncviz_app.context import AppContext
 MARGIN = 14
 EXTENT_ROW_HEIGHT = 4
 EXTENT_ROW_GAP = 2
+PLAYING_REPAINT_INTERVAL_S = 1 / 30
 
 
 class TimelineBar(QWidget):
@@ -21,9 +24,17 @@ class TimelineBar(QWidget):
         self.setMinimumHeight(64)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        context.timeline.subscribe(lambda _t: self.update())
+        self._last_request = 0.0
+        context.timeline.subscribe(self._on_timeline)
         if context.navigator is not None:
             context.navigator.subscribe(lambda _n: self.update())
+
+    def _on_timeline(self, tl) -> None:
+        now = time.perf_counter()
+        if tl.playing and now - self._last_request < PLAYING_REPAINT_INTERVAL_S:
+            return                       # the strip moves slowly; no need to repaint it every tick
+        self._last_request = now
+        self.update()
 
     # -- coordinates ---------------------------------------------------------------------
     def _x_of(self, time: float) -> float:
@@ -87,6 +98,7 @@ class TimelineBar(QWidget):
     # -- interaction ---------------------------------------------------------------------
     def _seek_to(self, event) -> None:
         self.context.bus.publish(Seek(self._time_at(event.position().x())))
+        self.update()                    # dragging must feel immediate, so this bypasses the throttle
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

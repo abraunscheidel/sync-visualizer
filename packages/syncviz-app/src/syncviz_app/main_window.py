@@ -7,6 +7,8 @@ dock panel the user can rearrange, tab, float or hide. Video is just one of them
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QElapsedTimer, QTimer, Qt
 from PySide6.QtWidgets import QDockWidget, QMainWindow, QVBoxLayout, QWidget
 
@@ -14,11 +16,11 @@ from syncviz_app.context import AppContext
 from syncviz_app.controls import ControlsBar
 from syncviz_app.info_panel import InfoPanel
 from syncviz_app.project import Project
+from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.timeline_bar import TimelineBar
 from syncviz_app.views.base import View
 
-REFRESH_INTERVAL_MS = 16        # views redraw at most this often, however fast the playhead moves
-PLAYBACK_TICK_MS = 8
+PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so this only sets its granularity
 
 
 class MainWindow(QMainWindow):
@@ -71,17 +73,19 @@ class MainWindow(QMainWindow):
         for dock in self.docks:
             view_menu.addAction(dock.toggleViewAction())
 
-        # Redraw views from a timer, not on every playhead event: scrubbing or fast playback
-        # can fire far more events than the screen can show.
-        self._dirty = True
-        context.timeline.subscribe(lambda _t: setattr(self, "_dirty", True))
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self._refresh_views)
-        self._refresh_timer.start(REFRESH_INTERVAL_MS)
+        # Views redraw from a scheduler, not on every playhead event. Each has its own rate,
+        # and a governor lowers them all if the interface starts to fall behind (see refresh.py).
+        self.scheduler = RefreshScheduler(views)
+        context.timeline.subscribe(lambda _t: self.scheduler.changed())
+        self._pump_timer = QTimer(self)
+        self._pump_timer.setTimerType(Qt.TimerType.PreciseTimer)      # the governor reads this timer's lateness
+        self._pump_timer.timeout.connect(self._pump)
+        self._pump_timer.start(int(PUMP_INTERVAL_S * 1000))
 
         self._clock = QElapsedTimer()
         self._clock.start()
         self._play_timer = QTimer(self)
+        self._play_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._play_timer.timeout.connect(self._tick)
         self._play_timer.start(PLAYBACK_TICK_MS)
 
@@ -100,22 +104,17 @@ class MainWindow(QMainWindow):
         dt = self._clock.restart() / 1000.0
         self.context.timeline.advance(dt)
 
-    def _refresh_views(self) -> None:
-        if not self._dirty:
-            return
-        self._dirty = False
-        t = self.context.timeline.time
-        for view in self.views:
-            if view.isVisible():
-                view.refresh(t)
+    def _pump(self) -> None:
+        self.scheduler.pump(time.perf_counter(), self.context.timeline.time)
 
     def refresh_now(self) -> None:
-        self._dirty = True
-        self._refresh_views()
+        """Redraw every visible view immediately, ignoring rate limits."""
+        self.scheduler.changed()
+        self.scheduler.pump(time.perf_counter(), self.context.timeline.time, force=True)
 
     def closeEvent(self, event) -> None:
         self._play_timer.stop()
-        self._refresh_timer.stop()
+        self._pump_timer.stop()
         for view in self.views:
             view.close_view()
         super().closeEvent(event)

@@ -1278,6 +1278,31 @@ explicitly where they matter (a colored sync LED, display).
 - To keep this open, the frame index and the frame reader must not assume that a
   local file path exists beyond the point where they are opened.
 
+### 34.2 Keeping the interface responsive during playback
+
+Redrawing every view on every playhead change used the main thread almost
+completely during playback (about 15 ms of each 16.7 ms frame in measurement:
+scrolling plots cost 5-7 ms each to scroll and repaint), so clicks, such as on the
+filters, waited behind drawing and felt laggy. The remedies, in order of effect:
+
+- **Per-view redraw rates.** A scrolling plot looks the same at 30 redraws per
+  second as at 60; the video gets the full display rate. A project may override
+  `refresh_hz` per view.
+- **An adaptive governor.** The scheduler measures how late its own timer fires.
+  When the interface is falling behind it lowers every view's rate, and raises
+  them again when there is headroom. Cost depends on pixel count (display scaling,
+  large monitors), so a fixed limit tuned on one machine would be wrong on another.
+- **Throttled secondary updates.** The time label and the timeline strip update at
+  a lower rate while playing; user input (dragging the strip, seeking) is never
+  throttled.
+- A view that has not drawn the latest playhead position is always brought up to
+  date, so the final state after a seek or when playback stops is never skipped.
+
+Measured offscreen on one machine (1500x900), wait before a zero-delay event ran
+during playback: median 12.6 ms before, 0.1 ms after; 95th percentile 15.8 ms before,
+14.2 ms after (an event arriving during a paint still waits for it). Shortening
+Python's thread switch interval made things much worse and should not be used.
+
 ---
 
 ## 35. Technology

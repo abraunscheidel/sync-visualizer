@@ -14,12 +14,15 @@ from syncviz_app.context import AppContext
 
 class View(QWidget):
     type_name = ""
+    default_refresh_hz = 30.0      # redraws per second while the playhead moves; see refresh.py
 
     def __init__(self, context: AppContext, spec: dict) -> None:
         super().__init__()
         self.context = context
         self.spec = spec
         self.title: str = spec.get("title") or self.type_name
+        # Upper limit on how often this view redraws. A project can override it per view.
+        self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
 
     def extent(self) -> tuple[float, float] | None:
         """Range of shared time this view has data for, or None if it has no time extent."""
