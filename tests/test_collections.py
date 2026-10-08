@@ -70,6 +70,7 @@ collections:
   label: Session
   from: {{glob: "data/*/*.nwb"}}
   attributes: {{mouse: 'sub-([A-Z])_', day: 'ses-(\\d+)'}}
+  attribute_labels: {{mouse: {{label: mouse, plural: mice}}}}
 segmentations:
   groups:
     label: Block
@@ -249,7 +250,16 @@ def test_a_filter_that_excludes_the_open_collection_moves_to_the_nearest_match(w
 
 def test_filter_options_show_how_many_collections_each_would_leave(window):
     mouse = window.collection_bar._filters["mouse"]
-    assert [mouse.itemText(i) for i in range(mouse.count())] == ["All (4)", "A (2)", "B (1)", "C (1)"]
+    assert [mouse.itemText(i) for i in range(mouse.count())] == ["All (3 mice)", "A (2 sessions)", "B (1 session)", "C (1 session)"]
+
+
+def test_all_counts_the_kinds_the_filter_chooses_between_and_each_value_counts_its_collections(window):
+    bar = window.collection_bar
+    day = bar._filters["day"]
+    mouse = bar._filters["mouse"]
+    day.setCurrentIndex(day.findData("2"))                     # only mouse A has a second day
+    texts = [mouse.itemText(i) for i in range(mouse.count())]
+    assert texts[0] == "All (1 mouse)" and "A (1 session)" in texts
 
 
 def test_collection_controls_are_marked_for_the_workspace(window):

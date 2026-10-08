@@ -403,7 +403,7 @@ class CollectionBar(QToolBar):
             box.addItem(ALL, None)
             for value in values:
                 box.addItem(str(value), value)
-            self.addWidget(QLabel(f"  {attribute}: "))
+            self.addWidget(QLabel(f"  {project.attribute_names(attribute)[0]}: "))
             self.addWidget(box)
             self._filters[attribute] = box
         self.match_label = QLabel()
@@ -426,13 +426,20 @@ class CollectionBar(QToolBar):
         return self._matches(self._selected())
 
     def _refresh_options(self) -> None:
+        project = self.window_.project
         for attribute, box in self._filters.items():
             rows = [self.collections[i] for i in self._matches(self._selected(skip=attribute))]
             model = box.model()
             for i in range(box.count()):
                 value = box.itemData(i)
                 n = len(rows) if value is None else sum(1 for c in rows if c.attributes.get(attribute) == value)
-                box.setItemText(i, f"{ALL} ({n})" if value is None else f"{value} ({n})")
+                if value is None:                  # "All" counts what the filter chooses between (mice), not the sessions
+                    kinds = len({c.attributes[attribute] for c in rows if attribute in c.attributes})
+                    one, many = project.attribute_names(attribute)
+                    box.setItemText(i, f"{ALL} ({kinds} {one if kinds == 1 else many})")
+                else:                              # a value counts the collections it leaves (sessions)
+                    noun = (project.collection_label if n == 1 else project.collection_plural).lower()
+                    box.setItemText(i, f"{value} ({n} {noun})")
                 model.item(i).setEnabled(n > 0 or i == box.currentIndex())
 
     def _refresh_picker(self) -> None:

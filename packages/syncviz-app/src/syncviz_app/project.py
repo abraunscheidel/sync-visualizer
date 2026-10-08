@@ -172,6 +172,18 @@ class Project:
         return str((self.config.get("collections") or {}).get("label") or "Collection")
 
     @property
+    def collection_plural(self) -> str:
+        spec = self.config.get("collections") or {}
+        return str(spec.get("label_plural") or f"{self.collection_label}s")
+
+    def attribute_names(self, attribute: str) -> tuple[str, str]:
+        """How the project names an attribute of its collections, singular and plural, for display:
+        `collections: {attribute_labels: {mouse: {label: Mouse, plural: mice}}}`. Without it, the attribute's own name and +"s"."""
+        given = ((self.config.get("collections") or {}).get("attribute_labels") or {}).get(attribute) or {}
+        label = str(given.get("label") or attribute)
+        return label, str(given.get("plural") or f"{label}s")
+
+    @property
     def view_specs(self) -> list[dict]:
         return list(self.config.get("views", []))
 

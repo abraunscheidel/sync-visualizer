@@ -12,6 +12,7 @@ import time
 from PySide6.QtGui import QKeySequence
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
 from syncviz_app.details_panel import DetailsPanel
+from syncviz_app.loading import LoadingScreen, run_in_background
 from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
 from syncviz_app.context import AppContext
@@ -90,6 +91,7 @@ class MainWindow(QMainWindow):
         info_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)   # always present
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, info_dock)
 
+        self.loading = LoadingScreen(self)                      # covers the window while another collection opens
         self.details_panel = DetailsPanel(context)
         details_dock = QDockWidget("Details", self)
         details_dock.setWidget(self.details_panel)
@@ -271,7 +273,7 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Saved workspace '{self.workspace_name}'", 4000)
 
-    def _sync_views(self, workspace: Workspace) -> None:
+    def _sync_views(self, workspace: Workspace, progress=None) -> None:
         """Add and remove views until the window has the ones a workspace calls for."""
         wanted = [s for s in self.project.view_specs if (s.get("title") or s["type"]) not in workspace.removed]
         wanted += workspace.added
@@ -279,9 +281,11 @@ class MainWindow(QMainWindow):
         for view in [v for v in self.views if v.title not in titles]:
             self.remove_view(view, track=False, refresh=False)
         have = {v.title for v in self.views}
-        for spec in wanted:
-            if (spec.get("title") or spec["type"]) not in have:
-                self.add_view(spec, track=False, refresh=False)
+        missing = [s for s in wanted if (s.get("title") or s["type"]) not in have]
+        for done, spec in enumerate(missing):
+            if progress is not None:
+                progress(f"Building {spec.get('title') or spec['type']}  ({done + 1} of {len(missing)})", done, len(missing))
+            self.add_view(spec, track=False, refresh=False)
         self._added = {s.get("title") or s["type"]: s for s in workspace.added}
         self._removed = list(workspace.removed)
 
@@ -304,23 +308,42 @@ class MainWindow(QMainWindow):
 
     def switch_collection(self, index: int) -> bool:
         """Open another collection: its sources, segments and views replace the current ones, and the
-        workspace (which views, where, what settings) carries over. If it cannot be opened, nothing changes."""
-        project, context = self.project, self.context
+        workspace (which views, where, what settings) carries over. If it cannot be opened, nothing changes.
+        A loading screen covers the window meanwhile, so it never looks frozen."""
+        project = self.project
         if index == project.active:
             return True
-        if not 0 <= index < len(project.collections):
+        if not 0 <= index < len(project.collections) or self.loading.showing:
             return False
+        self.loading.begin(f"Opening {project.collections[index].title}", "Reading the files…")
+        try:
+            return self._switch_collection(index)
+        finally:
+            self.loading.end()
+
+    def _switch_collection(self, index: int) -> bool:
+        project, context = self.project, self.context
         resources = intervals = None
         try:
-            resources = project.open_collection(index)
-            if context.navigator is not None:
-                spec = next(iter(project.segmentation_specs.values()))
-                intervals = resources.intervals(spec["from"])
+            def open_files():
+                opened = project.open_collection(index)
+                try:
+                    found = None
+                    if context.navigator is not None:
+                        spec = next(iter(project.segmentation_specs.values()))
+                        found = opened.intervals(spec["from"])
+                    return opened, found
+                except BaseException:
+                    opened.close()
+                    raise
+
+            resources, intervals = run_in_background(open_files)         # the bar keeps moving while the files are read
         except Exception as exc:
             if resources is not None:
                 resources.close()
             self.statusBar().showMessage(f"Could not open {project.collections[index].title}: {exc}", 10000)
             return False
+        self.loading.progress("Closing the previous session…")
         self._remember_collection()
         context.bus.publish(SetPlaying(False))
         for view in list(self.views):
@@ -333,7 +356,8 @@ class MainWindow(QMainWindow):
         if intervals is not None:
             context.navigator.replace_intervals(intervals)
             self.filter_bar.repopulate()
-        self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)))
+        self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)), self.loading.progress)
+        self.loading.progress("Arranging the window…")
         self._apply_lags(dict(self._lags))
         self._apply_view_settings({t: dict(v) for t, v in self._view_settings.items()})
         self._views_changed()

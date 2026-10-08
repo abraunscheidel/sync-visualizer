@@ -31,6 +31,9 @@ collections:
   attributes:
     mouse: 'sub-([^_/]+)_'
     date: 'ses-(\d{8})'
+  attribute_labels:               # how the dropdowns name an attribute, singular and plural
+    mouse: {label: Mouse, plural: mice}
+    date: {label: Date, plural: dates}
 
 # The core only knows "segments" (intervals you can step through). The label is
 # display text; "Trial" is this experiment's name for them.
