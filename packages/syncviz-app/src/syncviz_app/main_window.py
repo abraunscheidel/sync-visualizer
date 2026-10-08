@@ -15,10 +15,13 @@ from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBo
 
 from syncviz_app.context import AppContext
 from syncviz_app.debug import DebugTools
-from syncviz_app.controls import FilterBar, NavigationBar
+from syncviz_app.controls import CollectionBar, FilterBar, NavigationBar
 from syncviz_app.info_panel import InfoPanel
-from syncviz.core import Seek
-from syncviz_app.workspace import DEFAULT_NAME, Workspace, delete_workspace, list_workspaces, load_workspace, save_workspace
+from syncviz.core import Seek, SetPlaying
+from syncviz_app.workspace import (
+    DEFAULT_NAME, Workspace, delete_workspace, list_workspaces, load_collection_state, load_workspace,
+    save_collection_state, save_workspace,
+)
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.stall import StallGuard
@@ -32,8 +35,11 @@ PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project, context: AppContext, views: list[View], debug: bool = False,
-                 workspace: Workspace | None = None, workspace_dir=None, workspace_name: str = DEFAULT_NAME) -> None:
+                 workspace: Workspace | None = None, workspace_dir=None, workspace_name: str = DEFAULT_NAME,
+                 state_dir=None) -> None:
         super().__init__()
+        self.state_dir = state_dir                                # per-collection memory on disk; None = not kept
+        self._memory: dict[str, dict] = {}                        # per-collection state while the app runs
         self.workspace_dir = workspace_dir                        # this project's workspaces folder; None = workspaces are off
         self.workspace_name = workspace_name                      # the workspace in use (it may not be saved yet)
         saved = workspace or Workspace()
@@ -48,7 +54,14 @@ class MainWindow(QMainWindow):
         for spec in project.segmentation_specs.values():
             filter_attrs = spec.get("filters", [])
             break
-        # Top row: playback and the two ways of moving (by segment, by frame). Second row: filters.
+        # Rows, outermost scope first: which collection (only if the project has several); playback and the
+        # ways of moving (by segment, by frame); then the segment filters.
+        self.collection_bar = None
+        if project.multiple:
+            self.collection_bar = CollectionBar(self)
+            self.collection_bar.setObjectName("collections")
+            self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.collection_bar)
+            self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         self.navigation = NavigationBar(context)
         self.navigation.setObjectName("navigation")
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.navigation)
@@ -111,6 +124,8 @@ class MainWindow(QMainWindow):
         else:
             QTimer.singleShot(0, self._apply_initial_sizes)
 
+        self._restore_collection()
+
         self._clock = QElapsedTimer()
         self._clock.start()
         self._play_timer = QTimer(self)
@@ -136,18 +151,20 @@ class MainWindow(QMainWindow):
         self._apply_settings(saved.settings)
 
     def settings(self) -> dict:
-        """The working state apart from the arrangement: filters, frame step, speed, playhead position."""
-        out = {"navigation": self.navigation.state(), "time": self.context.timeline.time}
+        """The working state apart from the arrangement: filters, frame step and speed."""
+        out = {"navigation": self.navigation.state()}
         if self.filter_bar is not None:
             out["filters"] = self.filter_bar.state()
+        if self.collection_bar is not None:
+            out["collections"] = self.collection_bar.state()
         return out
 
     def _apply_settings(self, settings: dict) -> None:
         self.navigation.apply_state(settings.get("navigation", {}))
         if self.filter_bar is not None:
             self.filter_bar.apply_state(settings.get("filters", {}))
-        if "time" in settings:                             # after the filters, which may have moved the playhead
-            self.context.bus.publish(Seek(float(settings["time"])))
+        if self.collection_bar is not None:
+            self.collection_bar.apply_state(settings.get("collections", {}))
 
     def current_workspace(self) -> Workspace:
         def encode(data):
@@ -163,8 +180,9 @@ class MainWindow(QMainWindow):
         )
 
     def _set_title(self) -> None:
+        collection = f" — {self.project.collection.title}" if self.project.multiple else ""
         suffix = f" — workspace {self.workspace_name}" if self.workspace_dir is not None else ""
-        self.setWindowTitle(f"Sync Visualizer — {self.project.name}{suffix}")
+        self.setWindowTitle(f"Sync Visualizer — {self.project.name}{collection}{suffix}")
 
     def saved_workspace_names(self) -> list[str]:
         return list_workspaces(self.workspace_dir) if self.workspace_dir is not None else []
@@ -176,27 +194,85 @@ class MainWindow(QMainWindow):
             return
         try:
             save_workspace(self.workspace_dir, self.workspace_name, self.current_workspace())
+            if self.state_dir is not None:
+                self._remember_collection()
+                key = self.project.collection.key
+                save_collection_state(self.state_dir, key, self._memory[key])
         except OSError as exc:
             self.context.notes.append(f"workspace not saved: {exc}")
             self.statusBar().showMessage(f"Could not save workspace: {exc}", 8000)
             return
         self.statusBar().showMessage(f"Saved workspace '{self.workspace_name}'", 4000)
 
-    def apply_workspace(self, workspace: Workspace) -> None:
-        """Make the window match a workspace now: the views it has, then where the panels are."""
+    def _sync_views(self, workspace: Workspace) -> None:
+        """Add and remove views until the window has the ones a workspace calls for."""
         wanted = [s for s in self.project.view_specs if (s.get("title") or s["type"]) not in workspace.removed]
         wanted += workspace.added
         titles = [s.get("title") or s["type"] for s in wanted]
         for view in [v for v in self.views if v.title not in titles]:
-            self.remove_view(view)
+            self.remove_view(view, track=False, refresh=False)
         have = {v.title for v in self.views}
         for spec in wanted:
             if (spec.get("title") or spec["type"]) not in have:
-                self.add_view(spec)
+                self.add_view(spec, track=False, refresh=False)
         self._added = {s.get("title") or s["type"]: s for s in workspace.added}
         self._removed = list(workspace.removed)
+
+    def apply_workspace(self, workspace: Workspace) -> None:
+        """Make the window match a workspace now: the views it has, then where the panels are."""
+        self._sync_views(workspace)
         self._restore_workspace(workspace, geometry=False)           # the window keeps its size when switching
         self._views_changed()
+
+    # -- collections -----------------------------------------------------------------------
+    def _remember_collection(self) -> None:
+        self._memory[self.project.collection.key] = {"time": self.context.timeline.time}
+
+    def _restore_collection(self) -> None:
+        """Return to where the playhead was in the open collection (this run, else the saved file)."""
+        key = self.project.collection.key
+        state = self._memory.get(key) or (load_collection_state(self.state_dir, key) if self.state_dir else {})
+        if "time" in state:
+            self.context.bus.publish(Seek(float(state["time"])))
+
+    def switch_collection(self, index: int) -> bool:
+        """Open another collection: its sources, segments and views replace the current ones, and the
+        workspace (which views, where, what settings) carries over. If it cannot be opened, nothing changes."""
+        project, context = self.project, self.context
+        if index == project.active:
+            return True
+        if not 0 <= index < len(project.collections):
+            return False
+        resources = intervals = None
+        try:
+            resources = project.open_collection(index)
+            if context.navigator is not None:
+                spec = next(iter(project.segmentation_specs.values()))
+                intervals = resources.intervals(spec["from"])
+        except Exception as exc:
+            if resources is not None:
+                resources.close()
+            self.statusBar().showMessage(f"Could not open {project.collections[index].title}: {exc}", 10000)
+            return False
+        self._remember_collection()
+        context.bus.publish(SetPlaying(False))
+        for view in list(self.views):
+            self.remove_view(view, track=False, refresh=False)
+        previous = context.resources
+        project.activate(index, resources)
+        context.resources, context.collection = resources, project.collection
+        previous.close()
+        context.notes.clear()
+        if intervals is not None:
+            context.navigator.replace_intervals(intervals)
+            self.filter_bar.repopulate()
+        self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)))
+        self._views_changed()
+        self._restore_collection()
+        self._set_title()
+        if self.collection_bar is not None:
+            self.collection_bar.set_active(index)
+        return True
 
     def switch_workspace(self, name: str) -> bool:
         """Open a saved workspace. Changes to the one in use that were not saved are dropped."""
@@ -292,23 +368,26 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.spec() is not None:
             self.add_view(dialog.spec())
 
-    def add_view(self, spec: dict) -> View | None:
+    def add_view(self, spec: dict, track: bool = True, refresh: bool = True) -> View | None:
         """Create a view from a spec and show it. Returns None (with a note in the project panel) if
         it could not be created."""
         spec = {**spec, "title": unique_title(self.context, spec.get("title") or spec["type"])}
         view = create_view(self.context, spec)
         if view is None:
-            self._views_changed()
+            if refresh:
+                self._views_changed()
             return None
         self.views.append(view)
         register_view(self.context, view, self._colors_used)
         self._colors_used += 1
         self.docks.append(self._make_dock(view, spec.get("area", "right")))
-        self._added[view.title] = spec
-        self._views_changed()
+        if track:
+            self._added[view.title] = spec
+        if refresh:
+            self._views_changed()
         return view
 
-    def remove_view(self, view: View) -> None:
+    def remove_view(self, view: View, track: bool = True, refresh: bool = True) -> None:
         if view not in self.views:
             return
         i = self.views.index(view)
@@ -318,9 +397,10 @@ class MainWindow(QMainWindow):
         dock.deleteLater()
         view.close_view()
         unregister_view(self.context, view)
-        if self._added.pop(view.title, None) is None and view.title not in self._removed:
+        if track and self._added.pop(view.title, None) is None and view.title not in self._removed:
             self._removed.append(view.title)               # one of the project's own views
-        self._views_changed()
+        if refresh:
+            self._views_changed()
 
     def _views_changed(self) -> None:
         """Bring everything that lists or depends on the views up to date."""

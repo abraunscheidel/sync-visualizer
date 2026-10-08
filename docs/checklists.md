@@ -24,6 +24,12 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] If it can wait on slow work, implement `stalled_for(now)` (§34.3) and show one calm message over itself.
 - [ ] If it has user settings, decide whether they belong in the workspace (as above).
 
+## Anything that holds state about the open recording
+
+- [ ] State that belongs to one collection (playhead, notes, manual alignment) goes in the per-collection state, not the
+  workspace (§28.4). State that is how the window looks goes in the workspace (§28.3).
+- [ ] A view must survive its data being absent in a collection: raise `MissingDataError` and the panel shows "No data".
+
 ## Adding a source type
 
 - [ ] Entry point in group `syncviz.sources`; implement `describe()` and `catalog()` (so its data can be added from the UI).

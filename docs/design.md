@@ -2004,3 +2004,29 @@ never assumed to fit in memory. A source returns either a `TimeSeries` (all samp
   `conversion` and `offset` are applied to stored numbers for both kinds, so values are in the series' unit.
 * **Not yet:** multi-channel traces (2-D) are not offered by the Add view dialog; they need a channel choice.
   Thinned windows draw no gap breaks (their spacing is no longer the data's).
+
+### 28.4 Collections
+
+A project can hold many recordings. The core calls one a **collection** (a bundle of sources that share one
+timeline); the project's `collections.label` is what the interface calls it ("Session"). The window always shows one
+collection and opens another without restarting.
+
+* **Finding them:** `collections.from` names a provider. `glob` makes one collection per file matching a pattern;
+  `list` takes them written out. More providers can be added as plugins (`syncviz.collection_providers`).
+* **One definition for all:** `sources` is a template. `{path}`, `{dir}`, `{stem}` and `{name}` (and, for a list,
+  any field of the entry) are filled in per collection, and a `*` in a path is globbed. A source whose file is not
+  there for a collection is left out, not an error. Views refer to sources by the names given in `sources`, so the same
+  view specs serve every collection.
+* **Attributes:** regular expressions over the path (`mouse: 'sub-([^_/]+)_'`), or stated in a list. They are
+  filterable like segment attributes.
+* **Switching:** the segments, sources, views, timeline range and filter options are replaced; the workspace (which
+  views, where, what settings) carries over, as do views the user added or removed. A view whose data is missing keeps
+  its panel and says "No data in this session". If the new collection cannot be opened (for example it has no segments)
+  nothing changes. Playback stops.
+* **UI:** a first toolbar row (shown only when there is more than one) has previous/next, a picker, and filters on
+  the attributes that tell collections apart, with counts. A filter that excludes the open collection moves to the
+  nearest match; `--collection KEY` or `collection:` in the project file chooses the first one.
+* **What is remembered:** how the window looks and its settings are the workspace (per project). Facts about a
+  recording (for now where the playhead was) are per collection: kept while the app runs, and written to
+  `collection_state/<key>.json` beside the project when the workspace is saved.
+* **Not yet:** moving through segments across collections as one pooled list, and remote locations.

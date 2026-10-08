@@ -19,10 +19,10 @@ DEFAULT_STEP_INTERVAL_MS = 10.0
 
 
 def build_window(project_path: str | Path, debug: bool = False, use_workspace: bool = True,
-                 workspace_name: str | None = None) -> MainWindow:
+                 workspace_name: str | None = None, collection: str | None = None) -> MainWindow:
     """Open a project. `workspace_name` picks the workspace (else the project file's `workspace:`, else "Default");
     `use_workspace=False` ignores workspaces altogether."""
-    project = load_project(project_path)
+    project = load_project(project_path, collection)
     directory = workspaces_dir(project_path, project.config.get("workspaces_dir")) if use_workspace else None
     chosen = workspace_name or project.config.get("workspace") or DEFAULT_NAME
     workspace = load_workspace(directory, chosen) if directory else None
@@ -32,7 +32,8 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
-    context = AppContext(bus=bus, timeline=timeline, resources=project.resources, cache=cache)
+    context = AppContext(bus=bus, timeline=timeline, resources=project.resources, cache=cache,
+                         collection=project.collection, collection_label=project.collection_label)
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():
@@ -75,4 +76,5 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
         context.notes.append(f"step view {step_spec['view']!r} has no time grid; using {context.stepper.reference!r}")
 
     context.notes.extend(workspace_notes)
-    return MainWindow(project, context, views, debug=debug, workspace=workspace, workspace_dir=directory, workspace_name=chosen)
+    return MainWindow(project, context, views, debug=debug, workspace=workspace, workspace_dir=directory, workspace_name=chosen,
+                      state_dir=(Path(project_path).parent / "collection_state") if use_workspace else None)

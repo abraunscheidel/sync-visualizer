@@ -11,6 +11,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
+class MissingDataError(KeyError):
+    """Something a view needs is not in this collection (a source it does not have, or a path in a
+    file that is not there). Views show a calm "no data" message rather than failing."""
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
 @dataclass(frozen=True)
 class DataEntry:
     """One thing a source can provide, as offered to the user when choosing what to show.

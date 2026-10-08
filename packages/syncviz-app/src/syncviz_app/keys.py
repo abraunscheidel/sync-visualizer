@@ -9,6 +9,8 @@ DEFAULT_KEYS: dict[str, str] = {
     "play_pause": "Space",
     "previous_segment": "Left",
     "next_segment": "Right",
+    "previous_collection": "Ctrl+Left",
+    "next_collection": "Ctrl+Right",
     "step_back": "Shift+Left",
     "step_forward": "Shift+Right",
 }

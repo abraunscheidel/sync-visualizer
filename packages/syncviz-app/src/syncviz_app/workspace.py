@@ -79,5 +79,18 @@ def save_workspace(directory: Path, name: str, workspace: Workspace) -> Path:
     return path
 
 
+def load_collection_state(directory: Path, key: str) -> dict:
+    """What is remembered about one collection (for now where the playhead was); {} if nothing."""
+    try:
+        return dict(json.loads((directory / f"{key}.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def save_collection_state(directory: Path, key: str, state: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{key}.json").write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
 def delete_workspace(directory: Path, name: str) -> None:
     _file(directory, name).unlink(missing_ok=True)

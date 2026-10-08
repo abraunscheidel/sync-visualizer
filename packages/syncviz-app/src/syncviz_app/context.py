@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from syncviz.cache import DiskCache
+from syncviz.catalog import Collection
 from syncviz.core import ActionBus, SegmentNavigator, Stepper, Timeline
 from syncviz_app.project import ResourceStore
 
@@ -24,4 +25,6 @@ class AppContext:
     # colour each view is shown in wherever it is represented outside its own panel.
     coverage: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     colors: dict[str, str] = field(default_factory=dict)
+    collection: Collection | None = None                 # the recording that is open
+    collection_label: str = "Collection"                # what the project calls one ("Session")
     notes: list[str] = field(default_factory=list)       # plain factual remarks about the data

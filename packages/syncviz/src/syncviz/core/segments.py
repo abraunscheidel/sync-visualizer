@@ -179,6 +179,18 @@ class SegmentNavigator:
             self.bus.publish(SelectTimeRange(*self.bounds))
             self._notify()
 
+    def replace_intervals(self, intervals: IntervalSeries) -> None:
+        """Navigate a different set of segments (another collection's), starting at its first one.
+        The filter is cleared, since its choices belonged to the old segments; whether movement is
+        restricted to matches is kept."""
+        if len(intervals) == 0:
+            raise ValueError("cannot navigate an empty interval series")
+        self.intervals = intervals
+        self._all = range(len(intervals))
+        self._set_visible(list(self._all))
+        self._current = 0
+        self._announce()
+
     # -- explicit navigation -------------------------------------------------------------
     def _announce(self) -> None:
         start, stop = self.bounds

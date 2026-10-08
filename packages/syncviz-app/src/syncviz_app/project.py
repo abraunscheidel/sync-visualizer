@@ -7,6 +7,7 @@ are read on first use and kept, so several views can share one.
 
 from __future__ import annotations
 
+import glob
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,8 @@ import yaml
 
 from syncviz import plugins
 from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
-from syncviz.sources import Source
+from syncviz.catalog import Collection, discover, fill, has_unfilled
+from syncviz.sources import MissingDataError, Source
 
 _NON_CONSTRUCTOR_KEYS = {"type", "sync_signal"}
 
@@ -25,6 +27,10 @@ def split_ref(ref: str) -> tuple[str, str]:
     if not sep or not source or not path:
         raise ValueError(f"reference {ref!r} must look like 'source:path'")
     return source, path
+
+
+class MissingSourceError(MissingDataError):
+    """The collection has no source of this name (for example no video for one recording)."""
 
 
 class ResourceStore:
@@ -38,7 +44,7 @@ class ResourceStore:
 
     def source(self, name: str) -> Source:
         if name not in self.sources:
-            raise KeyError(f"no source named {name!r} (declared: {sorted(self.sources)})")
+            raise MissingSourceError(f"no source named {name!r} (this collection has: {sorted(self.sources)})")
         return self.sources[name]
 
     def _get(self, key: tuple, load):
@@ -75,19 +81,42 @@ class ResourceStore:
 
 @dataclass
 class Project:
+    """A project file, and the collection currently open in it.
+
+    Without a `collections` section the project is a single recording (one collection called
+    "default") and `sources` are used as written. With one, `sources` is a template: its
+    `{placeholders}` are filled from each collection, and a source whose file is not there for a
+    collection is simply left out, so views that need it show "no data".
+    """
+
     path: Path
     root: Path
     config: dict
-    sources: dict[str, Source]
+    collections: list[Collection]
+    active: int = 0
+    sources: dict[str, Source] = field(init=False)
     resources: ResourceStore = field(init=False)
 
     def __post_init__(self) -> None:
+        self.sources = self.build_sources(self.collections[self.active])
         self.resources = ResourceStore(self.sources)
 
     @property
     def name(self) -> str:
         """Display name: `name` from the config, else the project folder's name."""
         return str(self.config.get("name") or self.path.resolve().parent.name)
+
+    @property
+    def collection(self) -> Collection:
+        return self.collections[self.active]
+
+    @property
+    def multiple(self) -> bool:
+        return len(self.collections) > 1
+
+    @property
+    def collection_label(self) -> str:
+        return str((self.config.get("collections") or {}).get("label") or "Collection")
 
     @property
     def view_specs(self) -> list[dict]:
@@ -97,17 +126,54 @@ class Project:
     def segmentation_specs(self) -> dict[str, dict]:
         return dict(self.config.get("segmentations", {}))
 
+    # -- sources ---------------------------------------------------------------------------
+    def build_sources(self, collection: Collection) -> dict[str, Source]:
+        templated = bool(self.config.get("collections"))
+        sources: dict[str, Source] = {}
+        for name, spec in (self.config.get("sources") or {}).items():
+            spec = fill(dict(spec), collection.fields) if templated else dict(spec)
+            if templated and has_unfilled(spec):
+                continue                                           # the collection lacks a field this source needs
+            kwargs = {k: v for k, v in spec.items() if k not in _NON_CONSTRUCTOR_KEYS}
+            if "path" in kwargs:
+                path = self._resolve_path(kwargs["path"], must_exist=templated)
+                if path is None:
+                    continue                                       # no such file for this collection
+                kwargs["path"] = path
+            sources[name] = plugins.load("sources", spec["type"])(**kwargs)
+        return sources
 
-def load_project(path: str | Path) -> Project:
-    """Read a project file and construct its sources (nothing is read from them yet)."""
+    def _resolve_path(self, text: str, must_exist: bool) -> Path | None:
+        if any(ch in text for ch in "*?["):
+            found = sorted(glob.glob(str(self.root / text)))
+            return Path(found[0]).resolve() if found else None
+        path = (self.root / text).resolve()
+        return path if (path.exists() or not must_exist) else None
+
+    def open_collection(self, index: int) -> ResourceStore:
+        """The resources of another collection, ready to use. Nothing changes until `activate`."""
+        return ResourceStore(self.build_sources(self.collections[index]))
+
+    def activate(self, index: int, resources: ResourceStore) -> None:
+        self.active, self.resources, self.sources = index, resources, resources.sources
+
+
+def load_project(path: str | Path, collection: str | None = None) -> Project:
+    """Read a project file and find its collections (nothing is read from any source yet).
+    `collection` is the key of the one to open first (else the file's `collection:`, else the first)."""
     path = Path(path)
     config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     root = (path.parent / config.get("root", ".")).resolve()
-    sources: dict[str, Source] = {}
-    for name, spec in (config.get("sources") or {}).items():
-        spec = dict(spec)
-        kwargs = {k: v for k, v in spec.items() if k not in _NON_CONSTRUCTOR_KEYS}
-        if "path" in kwargs:
-            kwargs["path"] = (root / kwargs["path"]).resolve()
-        sources[name] = plugins.load("sources", spec["type"])(**kwargs)
-    return Project(path=path, root=root, config=config, sources=sources)
+    spec = config.get("collections")
+    if spec:
+        collections = discover(spec["from"], root, spec.get("attributes"))
+        if not collections:
+            raise ValueError(f"no {spec.get('label', 'collection').lower()}s found by {spec['from']}")
+    else:
+        collections = [Collection("default", str(config.get("name") or path.resolve().parent.name))]
+    wanted = collection or config.get("collection")
+    keys = [c.key for c in collections]
+    if wanted is not None and wanted not in keys:
+        raise ValueError(f"no collection {wanted!r} (found: {', '.join(keys[:12])}{' ...' if len(keys) > 12 else ''})")
+    return Project(path=path, root=root, config=config, collections=collections,
+                   active=keys.index(wanted) if wanted is not None else 0)

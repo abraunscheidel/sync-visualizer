@@ -487,10 +487,18 @@ def test_a_second_view_of_the_same_data_gets_its_own_title_and_colour(window):
     assert window.context.colors[view.title] != window.context.colors["Clip"]
 
 
-def test_a_view_that_cannot_be_created_leaves_a_note_and_changes_nothing(window):
+def test_a_view_whose_data_is_missing_keeps_its_panel_and_says_so_calmly(window):
     before = len(window.views)
-    assert window.add_view({"type": "timeseries", "title": "Broken", "series": {"from": "session:nope", "member": "x"}}) is None
-    assert len(window.views) == before and any("Broken" in n for n in window.context.notes)
+    view = window.add_view({"type": "timeseries", "title": "Broken", "series": {"from": "session:nope", "member": "x"}})
+    assert view.type_name == "placeholder" and len(window.views) == before + 1
+    assert any("Broken" in n for n in window.context.notes)
+    assert "Broken" not in window.context.extents          # it contributes nothing to the timeline
+
+
+def test_a_view_of_an_unknown_type_is_skipped_with_a_note(window):
+    before = len(window.views)
+    assert window.add_view({"type": "no-such-view", "title": "Odd"}) is None
+    assert len(window.views) == before and any("Odd" in n for n in window.context.notes)
 
 
 def test_removing_a_view_removes_it_from_the_window_and_the_context(window, qapp):

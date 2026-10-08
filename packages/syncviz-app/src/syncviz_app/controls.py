@@ -300,6 +300,22 @@ class FilterBar(QToolBar):
             box.blockSignals(False)
         self._filters_changed(0)
 
+    def repopulate(self) -> None:
+        """Refill the options from the navigator's (new) segments, with every filter back on All.
+        A filter whose attribute the new segments lack is disabled."""
+        nav = self.context.navigator
+        for attribute, box in self._filters.items():
+            box.blockSignals(True)
+            box.clear()
+            box.addItem(ALL, None)
+            present = attribute in nav.intervals.attributes
+            for value in (nav.intervals.unique(attribute) if present else []):
+                box.addItem(str(value), value)
+            box.setEnabled(present)
+            box.blockSignals(False)
+        self._refresh_options()
+        self._update_match_label()
+
     def _update_match_label(self) -> None:
         nav = self.context.navigator
         total = len(nav.intervals)
@@ -318,6 +334,8 @@ class FilterBar(QToolBar):
         """
         nav = self.context.navigator
         for attribute, box in self._filters.items():
+            if attribute not in nav.intervals.attributes:
+                continue
             counts = nav.facet_counts(attribute, **self._selected(skip=attribute))
             model = box.model()
             for i in range(box.count()):
@@ -338,3 +356,138 @@ class FilterBar(QToolBar):
         except ValueError:
             # Unreachable from the UI, since options that match nothing are disabled.
             self.match_label.setText(f"no {nav.label.lower()} matches")
+
+
+class CollectionBar(QToolBar):
+    """Which collection (recording) is open: previous / next, a picker, and filters on the
+    collections' own attributes (which mouse, which day). It works like the segment filters one
+    level up. Moving to another collection reloads everything in the window for it."""
+
+    def __init__(self, window, keys: dict[str, str] | None = None) -> None:
+        super().__init__("Collections")
+        self.window_ = window
+        project = window.project
+        self.collections = project.collections
+        self.keys = {**DEFAULT_KEYS, **(keys or {})}
+        self.setMovable(False)
+        noun = project.collection_label
+        self.addWidget(_caption(noun))
+        self.previous = QAction("◀", self)
+        self.previous.setShortcut(QKeySequence(self.keys["previous_collection"]))
+        self.previous.setToolTip(f"Previous {noun.lower()} ({self.keys['previous_collection']})")
+        self.previous.triggered.connect(lambda: self.step(-1))
+        self.addAction(self.previous)
+        self.picker = not_saved(QComboBox(), "which one is open belongs to the session, not to how the window looks")
+        self.picker.setMinimumWidth(260)
+        self.picker.setToolTip(f"Choose a {noun.lower()}")
+        self.addWidget(self.picker)
+        self.next = QAction("▶", self)
+        self.next.setShortcut(QKeySequence(self.keys["next_collection"]))
+        self.next.setToolTip(f"Next {noun.lower()} ({self.keys['next_collection']})")
+        self.next.triggered.connect(lambda: self.step(+1))
+        self.addAction(self.next)
+
+        # One filter for each attribute that actually tells collections apart.
+        names = sorted({a for c in self.collections for a in c.attributes})
+        self._filters: dict[str, QComboBox] = {}
+        for attribute in names:
+            values = sorted({c.attributes[attribute] for c in self.collections if attribute in c.attributes}, key=str)
+            if len(values) < 2:
+                continue
+            box = saved_in_workspace(QComboBox())
+            box.addItem(ALL, None)
+            for value in values:
+                box.addItem(str(value), value)
+            self.addWidget(QLabel(f"  {attribute}: "))
+            self.addWidget(box)
+            self._filters[attribute] = box
+        self.match_label = QLabel()
+        self.addSeparator()
+        self.addWidget(self.match_label)
+        self._refresh_options()
+        self._refresh_picker()
+        self.picker.activated.connect(self._picked)
+        for box in self._filters.values():
+            box.currentIndexChanged.connect(self._filters_changed)
+
+    # -- which collections match ---------------------------------------------------------
+    def _selected(self, skip: str | None = None) -> dict:
+        return {a: b.currentData() for a, b in self._filters.items() if a != skip and b.currentData() is not None}
+
+    def _matches(self, criteria: dict) -> list[int]:
+        return [i for i, c in enumerate(self.collections) if all(c.attributes.get(a) == v for a, v in criteria.items())]
+
+    def matching(self) -> list[int]:
+        return self._matches(self._selected())
+
+    def _refresh_options(self) -> None:
+        for attribute, box in self._filters.items():
+            rows = [self.collections[i] for i in self._matches(self._selected(skip=attribute))]
+            model = box.model()
+            for i in range(box.count()):
+                value = box.itemData(i)
+                n = len(rows) if value is None else sum(1 for c in rows if c.attributes.get(attribute) == value)
+                box.setItemText(i, f"{ALL} ({n})" if value is None else f"{value} ({n})")
+                model.item(i).setEnabled(n > 0 or i == box.currentIndex())
+
+    def _refresh_picker(self) -> None:
+        """List the matching collections, plus the open one if the filters leave it out."""
+        active = self.window_.project.active
+        shown = sorted(set(self.matching()) | {active})
+        self.picker.blockSignals(True)
+        self.picker.clear()
+        for i in shown:
+            self.picker.addItem(self.collections[i].title, i)
+        self.picker.setCurrentIndex(shown.index(active))
+        self.picker.blockSignals(False)
+        total, matching = len(self.collections), len(self.matching())
+        self.match_label.setText(f"{matching} of {total} match" if matching != total else f"{total}")
+        self.previous.setEnabled(self._neighbor(-1) is not None)
+        self.next.setEnabled(self._neighbor(+1) is not None)
+
+    def set_active(self, _index: int) -> None:
+        """The window opened another collection: show it."""
+        self._refresh_picker()
+
+    # -- moving ----------------------------------------------------------------------------
+    def _neighbor(self, direction: int) -> int | None:
+        active = self.window_.project.active
+        ahead = [i for i in self.matching() if (i > active if direction > 0 else i < active)]
+        return (min(ahead) if direction > 0 else max(ahead)) if ahead else None
+
+    def step(self, direction: int) -> None:
+        target = self._neighbor(direction)
+        if target is not None:
+            self.window_.switch_collection(target)
+
+    def _picked(self, row: int) -> None:
+        self.window_.switch_collection(int(self.picker.itemData(row)))
+
+    def _filters_changed(self, _index: int) -> None:
+        self._refresh_options()
+        matches = self.matching()
+        active = self.window_.project.active
+        if matches and active not in matches:           # keep the open one if it still matches, else move as little as possible
+            later = [i for i in matches if i > active]
+            self.window_.switch_collection(min(later) if later else max(matches))
+        self._refresh_picker()
+
+    # -- saved state -----------------------------------------------------------------------
+    def state(self) -> dict:
+        return {"filters": {a: _plain(b.currentData()) for a, b in self._filters.items()}}
+
+    def apply_state(self, state: dict) -> None:
+        """Set the filters from saved settings without leaving the open collection."""
+        wanted = state.get("filters", {})
+        for attribute, box in self._filters.items():
+            value, index = wanted.get(attribute), 0
+            for i in range(box.count()):
+                data = box.itemData(i)
+                if value is not None and data is not None and (data == value or str(data) == str(value)):
+                    index = i
+                    break
+            box.blockSignals(True)
+            box.setCurrentIndex(index)
+            box.blockSignals(False)
+        self._refresh_options()
+        self._refresh_picker()

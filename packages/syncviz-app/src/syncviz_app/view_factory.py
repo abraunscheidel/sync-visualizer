@@ -12,7 +12,9 @@ from syncviz import plugins
 from syncviz.core.stepping import FIXED_INTERVAL
 from syncviz_app.colors import view_color
 from syncviz_app.context import AppContext
+from syncviz.sources import MissingDataError
 from syncviz_app.views.base import View
+from syncviz_app.views.placeholder import PlaceholderView
 
 
 def create_view(context: AppContext, spec: dict) -> View | None:
@@ -25,6 +27,9 @@ def create_view(context: AppContext, spec: dict) -> View | None:
         return None
     try:
         return view_class(context, spec)
+    except MissingDataError as exc:                # this collection lacks the data: keep the panel, say so
+        context.notes.append(f"view {label!r}: {exc}")
+        return PlaceholderView(context, spec, str(exc))
     except Exception as exc:                       # bad data for a view must not take the app down
         context.notes.append(f"view {label!r} could not be created: {exc}")
         return None

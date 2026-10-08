@@ -1,23 +1,36 @@
-# Mouse whisker object-localization session (DANDI 000231, sub-219CR).
+# Mouse whisker object-localization recordings (DANDI 000231). Every session found below is
+# available from the Session picker in the toolbar.
 # Run with:  syncviz projects/mouse_whisker/project.yaml
 #
-# The schema is still evolving. This file records how the framework's generic
-# concepts map onto this experiment. The dataset has no neural recording and no
-# stored sync pulses; see docs/design.md section 18.1 for what it does contain.
+# The schema is still evolving. This file records how the framework's generic concepts map onto
+# this experiment. Some sessions have no neural recording (sub-219CR) and one has (sub-229CR);
+# none store sync pulses. See docs/design.md section 18.1 for what the dataset contains.
 
 root: ../..                      # relative paths below are resolved from the repository root
 cache: data/derived/cache        # expensive derived results (frame index, brightness scans)
 
+# `sources` is a template: {path}, {dir} and {stem} are filled in from each recording found below
+# (here every .nwb file in the dataset). The video sits in a folder named after the NWB file; a
+# recording without one simply has no video, and the video view says so.
 sources:
   session:
     type: nwb                    # resolved via the syncviz.sources entry point
-    path: data/dandi/000231/sub-219CR/sub-219CR_ses-20190404T152625_behavior+image.nwb
+    path: "{path}"
   video:
     type: video
-    path: data/dandi/000231/sub-219CR/sub-219CR_ses-20190404T152625_behavior+image/5825b483-75f5-41d3-b8c4-922b275250ff_external_file_0.mkv
+    path: "{dir}/{stem}/*.mkv"
     fps: 200                     # the container reports 30; use the dataset's rate
     sync_signal:
       kind: dark_frames          # blackout at each trial boundary
+
+# Where the recordings are. The core calls each one a "collection"; the label is what this
+# experiment calls it. Attributes are read from the path and can be filtered in the toolbar.
+collections:
+  label: Session
+  from: {glob: "data/dandi/000231/sub-*/*.nwb"}
+  attributes:
+    mouse: 'sub-([^_/]+)_'
+    date: 'ses-(\d{8})'
 
 # The core only knows "segments" (intervals you can step through). The label is
 # display text; "Trial" is this experiment's name for them.

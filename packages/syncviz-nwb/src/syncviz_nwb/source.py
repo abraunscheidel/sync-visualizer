@@ -14,7 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from syncviz.resources import EventSeries, IntervalSeries, LazyTimeSeries, TimeSeries
-from syncviz.sources import DataEntry, Source
+from syncviz.sources import DataEntry, MissingDataError, Source
 
 _TIME_COLUMNS = {"start_time", "stop_time"}
 LAZY_MIN_SAMPLES = 5_000_000      # a series with at least this many samples stays in the file
@@ -94,7 +94,7 @@ class NWBSource(Source):
                 return nwb.intervals[rest[0]]
         except (KeyError, IndexError):
             pass
-        raise KeyError(f"no object at {path!r}")
+        raise MissingDataError(f"no object at {path!r}")
 
     def read_intervals(self, path: str) -> IntervalSeries:
         """A TimeIntervals table (trials, contacts, ...) as an IntervalSeries.
