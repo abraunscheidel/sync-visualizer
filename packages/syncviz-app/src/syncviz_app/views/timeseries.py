@@ -46,7 +46,13 @@ class TimeSeriesView(TimeWindowView):
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
-        series_spec = spec["series"]
+        self.curve = self.plot.plot(pen=pg.mkPen("#4fa3e0", width=1.5), connect="finite")
+        self.enable_hover(self.plot.viewport())
+        self._set_series(spec["series"], self.title)
+
+    def _set_series(self, series_spec: dict, label: str) -> None:
+        """Show this series (and, if it comes from a source, make it the item the view points at)."""
+        context = self.context
         if "process" in series_spec:                      # computed by a processor, not read from a source
             self.series = context.resources.derived(series_spec)
         else:
@@ -54,12 +60,8 @@ class TimeSeriesView(TimeWindowView):
         self.target = None
         if "from" in series_spec:
             source, path = split_ref(series_spec["from"])
-            member = series_spec.get("member")
-            self.target = Target(source, path, "timeseries", member, self.title)
-            self.enable_hover(self.plot.viewport())
-        self.curve = self.plot.plot(pen=pg.mkPen("#4fa3e0", width=1.5), connect="finite")
-        if self.series.unit:
-            self.plot.setLabel("left", self.series.unit)
+            self.target = Target(source, path, "timeseries", series_spec.get("member"), label)
+        self.plot.setLabel("left", self.series.unit or "")
         # Fixed vertical range from the whole series, so the plot doesn't rescale as it scrolls.
         finite = self.series.sample_values()
         finite = finite[np.isfinite(finite)]
@@ -68,10 +70,23 @@ class TimeSeriesView(TimeWindowView):
             pad = (hi - lo) * 0.1 or 1.0
             self.plot.setYRange(lo - pad, hi + pad, padding=0)
 
+    def show_target(self, target) -> bool:
+        spec = self.spec_for(target)
+        if spec is None:
+            return False
+        self._set_series(spec["series"], spec["title"])
+        return True
+
+    def restore_subject(self) -> None:
+        self._set_series(self.spec["series"], self.title)
+        self.mark_selected()
+        if self._last_time is not None:
+            self.refresh(self._last_time)
+
     def target_at(self, pos):
         return None if self.target is None else replace(self.target, at=self.time_at(pos))
 
-    def selection_changed(self) -> None:
+    def mark_selected(self) -> None:
         self.curve.setPen(pg.mkPen("#4fa3e0", width=3 if self.is_selected(self.target) else 1.5))
 
     def extent(self):

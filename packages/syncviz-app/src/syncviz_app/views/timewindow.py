@@ -35,6 +35,8 @@ class TimeWindowView(View):
     def __init__(self, context: AppContext, spec: dict) -> None:
         super().__init__(context, spec)
         self.window_seconds = float(spec.get("window", DEFAULT_WINDOW_SECONDS))
+        self.follow = bool(spec.get("follow_selection", False))     # show whatever is selected (only views that can)
+        self._last_time: float | None = None
         self.plot = pg.PlotWidget()
         self.plot.setMouseEnabled(False, False)
         self.plot.hideButtons()
@@ -46,6 +48,47 @@ class TimeWindowView(View):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
         self.plot.scene().sigMouseClicked.connect(self._clicked)
+
+    # -- following the selection (design doc 28.7) --------------------------------------------------
+    def show_target(self, target) -> bool:
+        """Show `target` in place of what this view shows, keeping its place and settings. Returns whether it could.
+        Views that can follow the selection override this."""
+        return False
+
+    @property
+    def can_follow(self) -> bool:
+        return type(self).show_target is not TimeWindowView.show_target
+
+    def settings(self):
+        from syncviz_app.views.base import ViewSetting
+
+        if not self.can_follow:
+            return []
+        return [ViewSetting("follow_selection", "Follow the selected item", "toggle", self.follow,
+                            description="Show whatever is selected in this view, replacing what it shows. Untick to keep "
+                                        "what it shows now.")]
+
+    def apply_setting(self, key: str, value) -> None:
+        if key == "follow_selection":
+            self.follow = bool(value)
+            self.selection_changed()
+
+    def reset_settings(self) -> None:
+        self.follow = bool(self.spec.get("follow_selection", False))
+        self.restore_subject()
+
+    def restore_subject(self) -> None:
+        """Go back to what the project (or the user's spec) gave this view to show."""
+
+    def selection_changed(self) -> None:
+        target = self.context.selection.target
+        if self.follow and target is not None:
+            if self.show_target(target) and self._last_time is not None:
+                self.refresh(self._last_time)
+        self.mark_selected()
+
+    def mark_selected(self) -> None:
+        """Show which item this view draws is the selected one."""
 
     def _clicked(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
@@ -75,6 +118,7 @@ class TimeWindowView(View):
         return True
 
     def set_window(self, time: float) -> tuple[float, float]:
+        self._last_time = time
         lo, hi = time - self.window_seconds / 2, time + self.window_seconds / 2
         self.plot.setXRange(lo, hi, padding=0)
         self.playhead.setPos(time)

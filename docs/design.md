@@ -2292,9 +2292,15 @@ view type's `spec_for(target)`, which adds the view to the views list). Views ad
 `View.target_actions`; plugins can register more. Right-click on an item in a view opens the menu for it. A click and a double
 click run the actions the project binds with `interaction: {click: select, double_click: seek}`; where a click lands on
 nothing selectable it still seeks. `Target.at` is the time under the pointer and does not make two targets different items.
+Step 4: a view that can show an item in place of what it shows (`show_target`: the tracks and plot views) has a saved
+setting "Follow the selected item"; ticking it makes the view show whatever is selected, unticking keeps what it shows now, and
+reset returns to what its spec gave. "Show in temporary view" (on the same menu as Open as view) opens one view of the
+chosen type for the item; it follows the selection, the next peek replaces it, it is marked "(temporary)" in its title and in
+the views list, it is not in the workspace (neither the view nor its settings), and Keep in the views list makes it an ordinary
+view. A following view does not refresh its extent in the timeline (the data is the same recording).
 Backlog: hover and selection on the video overlays; hover and selection for processed series such as the population rate
-(needs its own design: they have no source reference); a temporary Open as view that can be pinned, and selection-bound
-views (step 4); the jump/clip/event-filter actions of 16.2.
+(needs its own design: they have no source reference); a selection-bound view that does more than show the item (a spike
+raster or event-aligned response for the selected unit); the jump/clip/event-filter actions of 16.2.
 
 ### 28.8 Dates and times
 

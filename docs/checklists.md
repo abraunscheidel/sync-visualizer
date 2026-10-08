@@ -31,6 +31,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] If it has user settings, decide whether they belong in the workspace (as above).
 - [ ] If it shows data the user might point at, implement `target_at(pos)` (return a `Target`, never format details yourself),
   call `enable_hover(...)` on the widget that draws it, and `selection_changed()` to show which item is selected (§28.7).
+  If it can show a different item in place, implement `show_target`/`restore_subject` so it gets the "Follow the selected item"
+  setting and can be the temporary view; give the class a `spec_for(target)` so it appears under Open as view (§28.7).
 
 ## Anything that holds state about the open recording
 

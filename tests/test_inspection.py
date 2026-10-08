@@ -368,3 +368,91 @@ def test_the_time_under_the_pointer_does_not_make_two_targets_different_items(wi
     a = Target("session", "units", "events", "12", at=1.0)
     b = Target("session", "units", "events", "12", at=2.0)
     assert a == b
+
+
+# -- temporary views and views that follow the selection (step 4) ---------------------------------------------------
+UNIT_7 = Target("session", "units", "events", "7", "Unit 7 · L4")
+UNIT_12 = Target("session", "units", "events", "12", "Unit 12 · L5b")
+
+
+def _peek(window, target, view_type="tracks"):
+    child = next(a for a in window.context.actions.get("peek").children(target) if a.id == f"peek:{view_type}")
+    child.run(target, None)
+    return next(v for v in window.views if v.temporary)
+
+
+def test_peeking_opens_a_temporary_view_that_the_next_peek_replaces(window):
+    first = _peek(window, UNIT_7)
+    assert first.type_name == "tracks" and [r["name"] for r in first.rows] == ["Unit 7 · L4"]
+    dock = window.docks[window.views.index(first)]
+    assert dock.windowTitle().endswith("(temporary)")
+    second = _peek(window, UNIT_12)
+    assert [v for v in window.views if v.temporary] == [second] and first not in window.views
+
+
+def test_a_temporary_view_is_not_part_of_the_workspace_until_kept(window):
+    view = _peek(window, UNIT_7)
+    assert view.title not in [s.get("title") for s in window.current_workspace().added]
+    window.set_view_setting(view, "follow_selection", False)
+    assert view.title not in window.settings()["view_settings"]
+    window.keep_view(view)
+    assert not view.temporary and view.title in [s.get("title") for s in window.current_workspace().added]
+    assert not window.docks[window.views.index(view)].windowTitle().endswith("(temporary)")
+    _peek(window, UNIT_12)                                           # a kept view is left alone
+    assert view in window.views
+
+
+def test_the_views_list_marks_a_temporary_view_and_offers_to_keep_it(window):
+    panel = window.views_panel
+    view = _peek(window, UNIT_7)
+    row = [v.title for v in window.views].index(view.title)
+    assert "(temporary)" in panel.list.item(row).text()
+    panel.list.setCurrentRow(row)
+    assert panel.keep_button.isEnabled()
+    panel.list.setCurrentRow(0)
+    assert not panel.keep_button.isEnabled()
+    panel.list.setCurrentRow(row)
+    panel.keep_button.click()
+    assert not view.temporary and "(temporary)" not in panel.list.item(row).text()
+
+
+def test_a_temporary_view_follows_the_selection(window):
+    view = _peek(window, UNIT_7)
+    view.refresh(3.0)
+    window.context.selection.set(UNIT_12)
+    assert [r["name"] for r in view.rows] == ["Unit 12 · L5b"] and view.rows[0]["spec"]["member"] == "12"
+    window.context.selection.set(Target("session", "processing/behavior/whisker", "timeseries", "angle", "Angle"))
+    assert [r["name"] for r in view.rows] == ["Unit 12 · L5b"]       # this view cannot show a series: it keeps what it had
+
+
+def test_any_tracks_or_plot_view_can_be_set_to_follow_and_unticking_it_keeps_what_it_shows(window):
+    candidate = next(c for c in TracksView.candidates(window.source_catalog()) if c.spec["title"] == "Units")
+    view = window.add_view(candidate.spec)
+    names = [r["name"] for r in view.rows]
+    window.context.selection.set(UNIT_12)
+    assert [r["name"] for r in view.rows] == names                   # not following: untouched
+    setting = next(s for s in view.settings() if s.key == "follow_selection")
+    assert setting.value is False
+    window.set_view_setting(view, "follow_selection", True)
+    assert [r["name"] for r in view.rows] == ["Unit 12 · L5b"]
+    assert window.settings()["view_settings"][view.title]["follow_selection"] is True      # saved with the workspace
+    window.set_view_setting(view, "follow_selection", False)
+    window.context.selection.set(UNIT_7)
+    assert [r["name"] for r in view.rows] == ["Unit 12 · L5b"]
+    view.reset_settings()
+    assert [r["name"] for r in view.rows] == names and view.follow is False
+
+
+def test_a_plot_follows_the_selected_series(window):
+    angle = next(v for v in window.views if v.title == "Angle")
+    angle.refresh(3.0)
+    window.set_view_setting(angle, "follow_selection", True)
+    window.context.selection.set(Target("session", "processing/behavior/whisker", "timeseries", "angle", "Other"))
+    assert angle.target.label == "Other" and angle.series.unit == "degrees"
+    angle.reset_settings()
+    assert angle.target.label == "Angle"
+
+
+def test_views_that_cannot_follow_offer_no_such_setting(window):
+    view = _units(window)
+    assert all(s.key != "follow_selection" for s in view.settings())

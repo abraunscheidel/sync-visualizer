@@ -71,6 +71,7 @@ class View(QWidget):
         # negative means ahead. See describe_delay.
         # It changes only what this view draws, never the data or the timeline.
         self.lag: float = 0.0
+        self.temporary: bool = bool(spec.get("temporary", False))    # not part of the workspace until the user keeps it
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
         context.selection.subscribe(lambda _target: self.selection_changed())
 

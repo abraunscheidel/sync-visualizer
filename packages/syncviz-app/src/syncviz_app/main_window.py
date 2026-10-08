@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
             self.details_dock.show()
             self.details_dock.raise_()
 
-        def ways_to_open(target) -> list[TargetAction]:
+        def ways_to_open(target, temporary: bool) -> list[TargetAction]:
             out = []
             for name in sorted(plugins.available("views")):
                 try:
@@ -191,14 +191,19 @@ class MainWindow(QMainWindow):
                 except Exception:
                     continue
                 if spec:
-                    out.append(TargetAction(f"open_as_view:{name}", view_class.display_name or name,
-                                            lambda _t, _o, spec=spec: self.add_view(spec)))
+                    show = (lambda _t, _o, spec=spec: self.show_temporary(spec)) if temporary else \
+                           (lambda _t, _o, spec=spec: self.add_view(spec))
+                    prefix = "peek" if temporary else "open_as_view"
+                    out.append(TargetAction(f"{prefix}:{name}", view_class.display_name or name, show))
             return out
 
         registry.register(TargetAction("show_details", "Show details", show_details,
                                        description="Select this and bring up the Details panel"))
-        registry.register(TargetAction("open_as_view", "Open as view", children=ways_to_open,
-                                       description="Add a view that shows this"))
+        registry.register(TargetAction("open_as_view", "Open as view", children=lambda t: ways_to_open(t, False),
+                                       description="Add a view that shows this to the views list"))
+        registry.register(TargetAction("peek", "Show in temporary view", children=lambda t: ways_to_open(t, True),
+                                       description="Look at this in a view that is not kept: the next one replaces it, and it "
+                                                   "follows what you select until you pin it with Keep"))
         registry.add_provider(lambda: [a for view in self.views for a in view.target_actions()])
         for action in registry.all():                                  # keyboard shortcuts act on the selection
             if action.shortcut:
@@ -231,7 +236,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _dock_title(view: View) -> str:
         words = describe_delay(view.lag * 1000.0)
-        return f"{view.title}   [{words}]" if words else view.title
+        title = f"{view.title}   [{words}]" if words else view.title
+        return f"{title}   (temporary)" if view.temporary else title
 
     def _apply_lags(self, lags: dict[str, float]) -> None:
         """Give every view the lag in `lags` (by title), and the rest the lag their project file gives (lag_ms), else none."""
@@ -245,7 +251,8 @@ class MainWindow(QMainWindow):
         """Change one of a view's own settings (see View.settings) and remember it."""
         if view is None:
             return
-        self._view_settings.setdefault(view.title, {})[key] = value
+        if not view.temporary:                                     # a temporary view is not part of the workspace
+            self._view_settings.setdefault(view.title, {})[key] = value
         view.apply_setting(key, value)
 
     def _apply_view_settings(self, saved: dict) -> None:
@@ -518,6 +525,7 @@ class MainWindow(QMainWindow):
         register_view(self.context, view, self._colors_used)
         self._colors_used += 1
         self.docks.append(self._make_dock(view, spec.get("area", "right")))
+        self.docks[-1].setWindowTitle(self._dock_title(view))
         self.set_view_lag(view, self._lags.get(view.title, float(spec.get("lag_ms", 0.0))))
         for key, value in self._view_settings.get(view.title, {}).items():
             view.apply_setting(key, value)
@@ -526,6 +534,28 @@ class MainWindow(QMainWindow):
         if refresh:
             self._views_changed()
         return view
+
+    def show_temporary(self, spec: dict) -> View | None:
+        """Show `spec` in the temporary view, replacing the one there. It follows the selection where it can, is not
+        part of the workspace, and becomes an ordinary view if the user keeps it."""
+        for view in [v for v in self.views if v.temporary]:
+            self.remove_view(view, track=False, refresh=False)
+        title = spec.get("title") or spec["type"]
+        view = self.add_view({**spec, "title": title, "temporary": True, "follow_selection": True}, track=False)
+        if view is not None:
+            dock = self.docks[self.views.index(view)]
+            dock.show()
+            dock.raise_()
+        return view
+
+    def keep_view(self, view: View) -> None:
+        """Make a temporary view an ordinary one: it joins the workspace and the next peek no longer replaces it."""
+        if view not in self.views or not view.temporary:
+            return
+        view.temporary = False
+        self._added[view.title] = {k: v for k, v in view.spec.items() if k != "temporary"}
+        self.docks[self.views.index(view)].setWindowTitle(self._dock_title(view))
+        self._views_changed()
 
     def remove_view(self, view: View, track: bool = True, refresh: bool = True) -> None:
         if view not in self.views:

@@ -37,9 +37,12 @@ class ViewsPanel(QWidget):
         layout.addWidget(self.list, 1)
         row = QHBoxLayout()
         self.add_button = QPushButton("Add view…")
+        self.keep_button = QPushButton("Keep")
+        self.keep_button.setToolTip("Keep the temporary view: it stays when you look at something else, and is saved with the workspace")
         self.remove_button = QPushButton("Remove")
         self.remove_button.setToolTip("Discard the selected view (to just hide it, untick it)")
         row.addWidget(self.add_button)
+        row.addWidget(self.keep_button)
         row.addWidget(self.remove_button)
         layout.addLayout(row)
         shift_row = QHBoxLayout()
@@ -74,6 +77,7 @@ class ViewsPanel(QWidget):
         self.save_button.clicked.connect(window.save_workspace_clicked)
         self.add_button.clicked.connect(window.choose_view_to_add)
         self.remove_button.clicked.connect(self._remove_selected)
+        self.keep_button.clicked.connect(self._keep_selected)
         self.list.itemChanged.connect(self._item_toggled)
         self.list.itemDoubleClicked.connect(self._bring_to_front)
         self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
@@ -86,7 +90,7 @@ class ViewsPanel(QWidget):
         self.list.blockSignals(True)
         self.list.clear()
         for view, dock in zip(w.views, w.docks):
-            item = QListWidgetItem(view.title)
+            item = QListWidgetItem(f"{view.title}  (temporary)" if view.temporary else view.title)
             item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             item.setIcon(_swatch(w.context.colors.get(view.title, "#888888")))
             item.setData(Qt.ItemDataRole.UserRole, view)
@@ -113,6 +117,8 @@ class ViewsPanel(QWidget):
 
     def _update_buttons(self) -> None:
         self.remove_button.setEnabled(self.list.currentItem() is not None)
+        view = self._selected_view()
+        self.keep_button.setEnabled(view is not None and view.temporary)
         has = self.list.currentItem() is not None
         self.lag_spin.setEnabled(has)
         self.lag_reset.setEnabled(has)
@@ -234,6 +240,11 @@ class ViewsPanel(QWidget):
         dock = self._dock_of(item)
         dock.show()
         dock.raise_()
+
+    def _keep_selected(self) -> None:
+        view = self._selected_view()
+        if view is not None:
+            self.window.keep_view(view)
 
     def _remove_selected(self) -> None:
         item = self.list.currentItem()

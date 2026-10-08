@@ -31,29 +31,49 @@ class TracksView(TimeWindowView):
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         self.rows = []
-        n = len(spec["rows"])
-        for i, row in enumerate(spec["rows"]):
+        self.band = pg.LinearRegionItem(values=(0, 0), orientation="horizontal", movable=False,
+                                        brush=pg.mkBrush(224, 160, 48, 50), pen=pg.mkPen(None))
+        self.band.setZValue(-10)
+        self.band.hide()
+        self.plot.addItem(self.band, ignoreBounds=True)
+        self._build(spec["rows"])
+        self.plot.getAxis("left").setWidth(110)
+        self.enable_hover(self.plot.viewport())
+
+    def _build(self, row_specs) -> None:
+        """(Re)draw with these rows."""
+        for row in self.rows:
+            self.plot.removeItem(row["item"])
+        self.rows = []
+        n = len(row_specs)
+        for i, row in enumerate(row_specs):
             y = n - 1 - i                                      # first row at the top
             colour = pg.intColor(i, hues=max(n, 6), values=1, maxValue=220)
             kind = row["kind"]
-            data = load_row_data(context, row)
+            data = load_row_data(self.context, row)
             if kind == "events":
                 item = self.plot.plot(pen=pg.mkPen(colour, width=2), connect="pairs")
             else:
                 item = self.plot.plot(pen=pg.mkPen(colour, width=BAR_WIDTH_PX, cap=pg.QtCore.Qt.PenCapStyle.FlatCap),
                                       connect="pairs")
             self.rows.append({"name": row.get("name", ""), "kind": kind, "y": y, "data": data, "item": item, "spec": row})
-        self.band = pg.LinearRegionItem(values=(0, 0), orientation="horizontal", movable=False,
-                                        brush=pg.mkBrush(224, 160, 48, 50), pen=pg.mkPen(None))
-        self.band.setZValue(-10)
-        self.band.hide()
-        self.plot.addItem(self.band, ignoreBounds=True)
         self.plot.setYRange(-0.7, n - 0.3, padding=0)
         self.plot.getAxis("left").setTicks([[(r["y"], r["name"]) for r in self.rows]])
-        self.plot.getAxis("left").setWidth(110)
-        self.enable_hover(self.plot.viewport())
 
-    def selection_changed(self) -> None:
+    def show_target(self, target) -> bool:
+        spec = self.spec_for(target)
+        if spec is None:
+            return False
+        self._build(spec["rows"])
+        return True
+
+    def restore_subject(self) -> None:
+        self._build(self.spec["rows"])
+        self.mark_selected()
+        if self._last_time is not None:
+            self.refresh(self._last_time)
+
+    def mark_selected(self) -> None:
         row = next((r for r in self.rows if self.is_selected(row_target(r["spec"]))), None)
         if row is None:
             self.band.hide()
