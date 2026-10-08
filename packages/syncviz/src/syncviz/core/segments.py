@@ -6,19 +6,28 @@ bouts is the `label`, which comes from the project configuration.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from typing import Any, Callable
 
 import numpy as np
 
-from syncviz.core.actions import ActionBus, SelectSegment, SelectTimeRange, Seek, SetPlaying, StepSegment
+from syncviz.core.actions import ActionBus, SelectSegment, SelectTimeRange, Seek, StepSegment
 from syncviz.resources import IntervalSeries
 
 
 class SegmentNavigator:
-    """A current position within an interval series, optionally filtered by attributes.
+    """The current segment of an interval series, and a filter saying which ones match.
 
-    Once attached to a timeline with `follow`, the current segment tracks the playhead, and
-    while a filter is active, playback skips over segments that do not match it.
+    The filter and the movement are separate things:
+
+    * the filter decides which segments *match* (`is_match`, `match_count`);
+    * `skip_hidden` decides whether movement is *restricted* to those. On, every way of
+      moving the playhead is kept inside the matching segments: stepping between segments,
+      playback, stepping by frame, clicking or dragging. Off, none of them is, and the filter
+      only marks which segments match, so the current segment may be one that does not.
+
+    Once attached to a timeline with `follow`, the current segment tracks the playhead and the
+    navigator becomes the timeline's constraint, so no method of navigating can bypass the filter.
     """
 
     def __init__(
@@ -36,11 +45,12 @@ class SegmentNavigator:
         self.label = label                         # display text only, from the project configuration
         self.plural = label_plural or f"{label}s"  # for irregular plurals ("Stimulus" -> "Stimuli") set it in the config
         self.index_attribute = index_attribute     # attribute shown as the segment's number
-        self.skip_hidden = True                    # while playing with a filter active, skip non-matching segments
-        self._timeline = None                      # set by follow()
+        self._skip_hidden = True
+        self._all = range(len(intervals))
         self._observers: list[Callable[[SegmentNavigator], None]] = []
-        self._set_visible(list(range(len(intervals))))
-        self._position = 0                         # position within the visible list
+        self._timeline = None                      # set by follow()
+        self._set_visible(list(self._all))
+        self._current = 0                          # index into the full series
         bus.subscribe(SelectSegment, lambda a: self.select(a.index))
         bus.subscribe(StepSegment, lambda a: self.step(a.step))
 
@@ -48,68 +58,120 @@ class SegmentNavigator:
         self._observers.append(observer)
 
     def _set_visible(self, visible: list[int]) -> None:
-        self._visible = visible
+        self._visible = visible                    # the segments matching the filter, ascending
         self._visible_set = set(visible)
         self._visible_starts = self.intervals.starts[visible]
+        self._visible_stops = self.intervals.stops[visible]
 
     def _notify(self) -> None:
         for observer in list(self._observers):
             observer(self)
 
+    # -- what is shown and where we are --------------------------------------------------
+    @property
+    def skip_hidden(self) -> bool:
+        return self._skip_hidden
+
+    @skip_hidden.setter
+    def skip_hidden(self, value: bool) -> None:
+        value = bool(value)
+        if value == self._skip_hidden:
+            return
+        self._skip_hidden = value
+        if value and self.filtered and self._current not in self._visible_set:
+            self._move_to_next_match(self._reference_time())     # restricting: leave the hidden segment
+        else:
+            self._notify()
+
     @property
     def filtered(self) -> bool:
         return len(self._visible) != len(self.intervals)
 
+    def is_match(self, index: int) -> bool:
+        return index in self._visible_set
+
+    @property
+    def match_count(self) -> int:
+        return len(self._visible)
+
+    def _navigable(self) -> Any:
+        """The segments movement may visit: the matching ones if restricted, else all of them."""
+        return self._visible if self._skip_hidden else self._all
+
     @property
     def index(self) -> int:
         """Index into the full interval series of the current segment."""
-        return self._visible[self._position]
+        return self._current
+
+    @property
+    def matches(self) -> bool:
+        """Whether the current segment matches the filter (always true when it is restricted)."""
+        return self._current in self._visible_set
 
     @property
     def count(self) -> int:
-        return len(self._visible)
+        """How many segments movement may visit."""
+        return len(self._navigable())
 
     @property
     def position(self) -> int:
-        """Zero-based position among the visible segments."""
-        return self._position
+        """Zero-based position of the current segment among those movement may visit."""
+        return min(bisect_left(self._navigable(), self._current), self.count - 1)
 
     @property
     def number(self) -> Any:
-        """The segment's own number if `index_attribute` is set, else its 1-based position."""
+        """The segment's own number if `index_attribute` is set, else its 1-based index."""
         if self.index_attribute is not None:
-            return self.intervals.attributes[self.index_attribute][self.index].item()
-        return self._position + 1
+            return self.intervals.attributes[self.index_attribute][self._current].item()
+        return self._current + 1
 
     @property
     def bounds(self) -> tuple[float, float]:
-        return float(self.intervals.starts[self.index]), float(self.intervals.stops[self.index])
+        return float(self.intervals.starts[self._current]), float(self.intervals.stops[self._current])
+
+    def _reference_time(self) -> float:
+        return self._timeline.time if self._timeline is not None else float(self.intervals.starts[self._current])
 
     # -- following the timeline ----------------------------------------------------------
     def follow(self, timeline) -> None:
-        """Track the playhead: keep the current segment in step with it, and skip while playing."""
+        """Keep the current segment in step with the playhead, and let the filter govern where
+        the playhead may go (see `resolve`)."""
         self._timeline = timeline
+        timeline.constraint = self
         timeline.subscribe(self._on_timeline)
+
+    @property
+    def restricting(self) -> bool:
+        """Whether the playhead is currently kept inside the matching segments."""
+        return self._skip_hidden and self.filtered
+
+    def resolve(self, time: float, previous: float) -> float:
+        """The timeline's constraint: while restricting, nothing may move the playhead outside the
+        segments that match the filter, whether it is playback, stepping, clicking or dragging.
+
+        A time outside them goes to the start of the next matching segment when moving forward, to
+        the end of the previous one when moving backward, and to the end of the last match when
+        nothing matching lies ahead.
+        """
+        if not self.restricting:
+            return time
+        i = int(np.searchsorted(self._visible_starts, time, side="right")) - 1     # last match starting at or before time
+        if i >= 0 and time < self._visible_stops[i]:
+            return time
+        if time >= previous:                                                         # moving forward (or staying put)
+            if i + 1 < len(self._visible):
+                return float(self._visible_starts[i + 1])
+            return float(np.nextafter(self._visible_stops[-1], -np.inf))
+        if i >= 0:
+            return float(np.nextafter(self._visible_stops[i], -np.inf))
+        return float(self._visible_starts[0])
 
     def _on_timeline(self, timeline) -> None:
         i = self.intervals.index_at(timeline.time)
-        if i is not None and i in self._visible_set:
-            if i != self.index:                    # the playhead has entered another matching segment
-                self._position = self._visible.index(i)
-                self.bus.publish(SelectTimeRange(*self.bounds))
-                self._notify()
-            return
-        # The playhead is in a gap, or in a segment the filter hides. Seeking there by hand is
-        # allowed; only playback is steered away from it.
-        if not (timeline.playing and self.skip_hidden and self.filtered):
-            return
-        ahead = int(np.searchsorted(self._visible_starts, timeline.time, side="right"))
-        if ahead < len(self._visible):
-            self.select(self._visible[ahead])      # playback carries on from the next match
-        else:                                      # nothing matching is left
-            last_stop = float(self.intervals.stops[self._visible[-1]])
-            self.bus.publish(SetPlaying(False))
-            self.bus.publish(Seek(float(np.nextafter(last_stop, -np.inf))))
+        if i is not None and i != self._current:   # the playhead has entered another segment
+            self._current = i
+            self.bus.publish(SelectTimeRange(*self.bounds))
+            self._notify()
 
     # -- explicit navigation -------------------------------------------------------------
     def _announce(self) -> None:
@@ -119,17 +181,24 @@ class SegmentNavigator:
         self._notify()
 
     def select(self, index: int) -> None:
-        """Go to the segment with this index in the full series (must be visible)."""
-        try:
-            self._position = self._visible.index(index)
-        except ValueError:
-            raise IndexError(f"segment {index} is not visible under the current filter") from None
+        """Go to the segment with this index in the full series."""
+        if not 0 <= index < len(self.intervals):
+            raise IndexError(f"segment {index} does not exist")
+        if self._skip_hidden and index not in self._visible_set:
+            raise IndexError(f"segment {index} is not visible under the current filter")
+        self._current = index
         self._announce()
 
     def step(self, step: int) -> None:
-        position = min(max(self._position + step, 0), self.count - 1)
-        if position != self._position:
-            self._position = position
+        navigable = self._navigable()
+        position = bisect_left(navigable, self._current)
+        if position < len(navigable) and navigable[position] == self._current:
+            target = position + step
+        else:                                      # the current segment is not one movement may visit
+            target = position if step > 0 else position - 1
+        target = min(max(target, 0), len(navigable) - 1)
+        if navigable[target] != self._current:
+            self._current = navigable[target]
             self._announce()
 
     def facet_counts(self, attribute: str, **criteria: Any) -> dict[Any, int]:
@@ -144,29 +213,26 @@ class SegmentNavigator:
         values, counts = np.unique(self.intervals.attributes[attribute][rows], return_counts=True)
         return dict(zip(values.tolist(), counts.tolist()))
 
-    def filter(self, **criteria: Any) -> None:
-        """Show only matching segments. Keeps the current segment if it still matches.
+    def _move_to_next_match(self, reference: float) -> None:
+        """Go to the first matching segment after `reference`, else the last one before it."""
+        ahead = int(np.searchsorted(self._visible_starts, reference, side="right"))
+        self._current = self._visible[ahead if ahead < len(self._visible) else len(self._visible) - 1]
+        self._announce()
 
-        If the current segment is hidden, move to the first match after the playhead (or the
-        last match before it when none is left ahead), so changing a filter moves you as
-        little as possible.
-        """
+    def filter(self, **criteria: Any) -> None:
+        """Set which segments match. If movement is restricted to matches and the current
+        segment no longer matches, move to the first match after the playhead (or the last one
+        before it when none is left ahead), so changing a filter moves you as little as possible."""
         visible = self.intervals.select(**criteria).tolist()
         if not visible:
             raise ValueError(f"no segments match {criteria}")
-        current = self.index
-        reference = self._timeline.time if self._timeline is not None else float(self.intervals.starts[current])
+        reference = self._reference_time()
         self._set_visible(visible)
-        if current in self._visible_set:
-            self._position = visible.index(current)
-            self._notify()
+        if not self._skip_hidden or self._current in self._visible_set:
+            self._notify()                         # the playhead stays where it is
         else:
-            ahead = int(np.searchsorted(self._visible_starts, reference, side="right"))
-            self._position = ahead if ahead < len(visible) else len(visible) - 1
-            self._announce()
+            self._move_to_next_match(reference)
 
     def clear_filter(self) -> None:
-        current = self.index
-        self._set_visible(list(range(len(self.intervals))))
-        self._position = current
+        self._set_visible(list(self._all))
         self._notify()

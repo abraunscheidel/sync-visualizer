@@ -92,7 +92,10 @@ class NavigationBar(QToolBar):
 
     def _update_segment_label(self) -> None:
         nav = self.context.navigator
-        self.segment_label.setText(f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})  ")
+        text = f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})"
+        if nav.filtered and not nav.matches:
+            text += "   not in filter"            # only possible while movement is not restricted to matches
+        self.segment_label.setText(text + "  ")
 
     # -- moving by frame -----------------------------------------------------------------
     def _add_frame_group(self, stepper) -> None:
@@ -203,14 +206,14 @@ class FilterBar(QToolBar):
         self.addSeparator()
         self.addWidget(self.match_label)
 
-        # Next/previous always follow the filter. This only decides what *playback* does when it
-        # reaches a segment the filter hides: skip ahead to the next match, or play straight through.
+        # The filter says which segments match; this decides whether moving is restricted to them.
         self.addSeparator()
-        self.skip = QCheckBox(f"Skip non-matching {noun} while playing")
+        self.skip = QCheckBox(f"Skip non-matching {noun}")
         self.skip.setChecked(nav.skip_hidden)
         self.skip.setToolTip(
-            f"On: playback jumps over {noun} the filter hides. Off: playback plays straight through them.\n"
-            f"The next/previous buttons always follow the filter."
+            f"On: every way of moving (previous/next, stepping, playback, clicking the timeline) stays\n"
+            f"within the {noun} that match the filter. Off: they visit every one, and the filter only\n"
+            f"highlights the matches."
         )
         self.skip.toggled.connect(lambda on: setattr(nav, "skip_hidden", on))
         self.addWidget(self.skip)
@@ -222,7 +225,7 @@ class FilterBar(QToolBar):
         nav = self.context.navigator
         total = len(nav.intervals)
         noun = nav.plural.lower()
-        self.match_label.setText(f"{nav.count} of {total} match" if nav.filtered else f"{total} {noun}")
+        self.match_label.setText(f"{nav.match_count} of {total} match" if nav.filtered else f"{total} {noun}")
 
     def _selected(self, skip: str | None = None) -> dict:
         return {a: box.currentData() for a, box in self._filters.items()

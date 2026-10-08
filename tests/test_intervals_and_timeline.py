@@ -312,13 +312,13 @@ def test_skipping_can_be_turned_off():
     assert tl.time == 11.0 and tl.playing
 
 
-def test_seeking_by_hand_into_a_hidden_segment_is_allowed_while_paused():
+def test_seeking_into_a_hidden_segment_snaps_to_the_next_match_while_restricted():
     bus, tl, nav = make_following_navigator()
-    nav.filter(stimulus="convex")
+    nav.filter(stimulus="convex")              # matches: segments 0 (0-9) and 2 (20-29)
 
-    bus.publish(Seek(15.0))                    # a hidden (concave) segment
+    bus.publish(Seek(15.0))                    # a hidden (concave) segment, ahead of the playhead
 
-    assert tl.time == 15.0 and not tl.playing
+    assert tl.time == 20.0 and nav.index == 2
 
 
 # --- facet counts and where a filter change lands --------------------------------------------
@@ -431,3 +431,99 @@ def test_the_plural_defaults_to_adding_an_s_and_can_be_set_for_irregular_names()
 
     assert SegmentNavigator(bus, make_intervals(), label="Trial").plural == "Trials"
     assert SegmentNavigator(bus, make_intervals(), label="Stimulus", label_plural="Stimuli").plural == "Stimuli"
+
+
+# --- the filter governs every way of moving the playhead ------------------------------------
+
+def restricted(stimulus="convex"):
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus=stimulus)
+    return bus, tl, nav
+
+
+def test_seeking_backward_into_a_hidden_segment_lands_at_the_end_of_the_previous_match():
+    bus, tl, nav = restricted()
+    bus.publish(Seek(25.0))                    # inside match 2 (20-29)
+
+    bus.publish(Seek(15.0))                    # backward, into hidden segment 1
+
+    assert 8.9 < tl.time < 9.0 and nav.index == 0      # just before segment 0 ends at 9.0
+
+
+def test_seeking_past_the_last_match_lands_at_its_end():
+    bus, tl, nav = restricted()
+
+    bus.publish(Seek(35.0))                    # hidden segment 3, nothing matching after it
+
+    assert 28.9 < tl.time < 29.0
+
+
+def test_seeking_inside_a_match_goes_exactly_where_asked():
+    bus, tl, nav = restricted()
+
+    bus.publish(Seek(23.5))
+
+    assert tl.time == 23.5
+
+
+def test_seeking_is_unrestricted_when_skipping_is_off_or_there_is_no_filter():
+    bus, tl, nav = restricted()
+    nav.skip_hidden = False
+    bus.publish(Seek(15.0))
+    assert tl.time == 15.0
+
+    nav.skip_hidden = True
+    nav.clear_filter()
+    bus.publish(Seek(15.0))
+    assert tl.time == 15.0
+
+
+def test_stepping_by_frames_across_the_end_of_a_match_jumps_to_the_next_match():
+    from syncviz.core import RegularGrid, StepTime, Stepper
+    bus, tl, nav = restricted()
+    stepper = Stepper(bus, tl, {"video": RegularGrid(rate=10.0, count=400)})
+    bus.publish(Seek(28.9))                    # the last tick inside match 2 is 28.9... its end is 29.0
+
+    bus.publish(StepTime(+1))                  # the next tick, 29.0, is hidden territory
+
+    assert tl.time == pytest.approx(29.0, abs=1e-6) and tl.time < 29.0     # held at the very end of the last match
+    assert nav.index == 2
+
+
+def test_stepping_by_frames_from_the_end_of_one_match_reaches_the_start_of_the_next():
+    from syncviz.core import RegularGrid, StepTime, Stepper
+    bus, tl, nav = restricted()
+    stepper = Stepper(bus, tl, {"video": RegularGrid(rate=10.0, count=400)})
+    bus.publish(Seek(8.9))                     # the last tick inside match 0 (0-9)
+
+    bus.publish(StepTime(+1))                  # 9.0 is outside; the next match starts at 20.0
+
+    assert tl.time == 20.0 and nav.index == 2
+
+
+def test_turning_restriction_on_while_outside_a_match_moves_to_the_next_match():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+    nav.skip_hidden = False
+    bus.publish(Seek(15.0))                    # hidden segment 1, allowed while unrestricted
+    assert nav.index == 1 and not nav.matches
+
+    nav.skip_hidden = True
+
+    assert nav.index == 2 and tl.time == 20.0
+
+
+def test_stepping_between_segments_visits_everything_when_unrestricted_and_only_matches_when_restricted():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+    nav.skip_hidden = False
+    visited = []
+    for _ in range(3):
+        bus.publish(StepSegment(+1))
+        visited.append(nav.index)
+    assert visited == [1, 2, 3]                # every segment, whatever the filter
+
+    nav.skip_hidden = True
+    nav.select(0)
+    bus.publish(StepSegment(+1))
+    assert nav.index == 2                      # only the matches

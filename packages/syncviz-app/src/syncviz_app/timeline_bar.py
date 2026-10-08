@@ -121,11 +121,15 @@ class TimelineBar(QWidget):
         nav = self.context.navigator
         if nav is not None:
             iv = nav.intervals
+            matching = QColor("#4fa3e0"); matching.setAlpha(95)
+            dimmed = QColor(text); dimmed.setAlpha(8)
             for i in range(len(iv)):
                 x0, x1 = self._x_of(iv.starts[i]), self._x_of(iv.stops[i])
                 if x1 < MARGIN or x0 > self.width() - MARGIN:
                     continue
-                if i % 2 == 0:
+                if nav.filtered:                  # matches stand out; the rest recede
+                    p.fillRect(QRectF(x0, top, max(x1 - x0 - 0.5, 1), groove_h), matching if nav.is_match(i) else dimmed)
+                elif i % 2 == 0:
                     p.fillRect(QRectF(x0, top, max(x1 - x0, 1), groove_h), band)
             x0, x1 = self._x_of(nav.bounds[0]), self._x_of(nav.bounds[1])
             p.fillRect(QRectF(x0, top, max(x1 - x0, 2), groove_h), current)

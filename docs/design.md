@@ -362,13 +362,20 @@ The navigator also follows the playhead:
 
 - The current segment (and the timeline's selection) tracks the playhead as it moves
   into other matching segments, whether by playback or by the user seeking.
-- **While a filter is active, playback skips what does not match.** When the playhead
-  leaves a matching segment, whether into a segment the filter hides or into a gap,
-  playback jumps to the start of the next matching segment and keeps playing. After the
-  last match it pauses. Without a filter, playback runs straight through, gaps included.
-- Seeking by hand into a hidden segment is always allowed while paused. Starting
-  playback from one skips ahead, as above. A toolbar option ("Skip non-matching ...",
-  or `skip_filtered: false` in the project) plays straight through instead.
+- **The filter says which segments match; a switch decides whether movement is restricted
+  to them.** Restricted (the default), *every* way of moving the playhead stays inside the
+  matching segments: previous/next, playback, stepping by frame, clicking or dragging on the
+  timeline, clicking in a plot. A position outside them moves to the start of the next
+  matching segment when going forward, the end of the previous one when going backward, and
+  the end of the last match when nothing matching lies ahead (playback then pauses).
+  Unrestricted, none of them is, and the filter only marks which segments match: the
+  timeline highlights them, the count shows how many, and a current segment that does not
+  match is labelled "not in filter". Without a filter nothing is restricted.
+- This is enforced in the timeline, not in each navigation command: the navigator installs
+  itself as the timeline's *constraint*, and every move goes through it, so a new way of
+  navigating cannot bypass the filter. Turning the restriction on while sitting on a
+  non-matching segment moves to the next match. A toolbar checkbox (or `skip_filtered: false`
+  in the project) turns the restriction off.
 
 ---
 
@@ -1107,9 +1114,9 @@ two kinds of parts:
 other filters' choices, and options that would leave none are disabled, so an empty
 result cannot be reached. A label shows "N of M match". Changing a filter applies
 immediately; if it hides the current segment the navigator moves to the next match after
-the playhead, and leaves the playhead alone when the current segment still matches. The
-next and previous buttons always follow the filter. A checkbox, always available, decides
-whether *playback* skips the segments the filter hides or plays straight through them.
+the playhead, and leaves the playhead alone when the current segment still matches. A
+checkbox, always available, decides whether movement is restricted to the matches (see
+section 10.1); the timeline strip highlights matching segments and dims the rest.
 
 **Controls.** The top row holds playback and two clearly separate ways of moving, each with
 its own caption: **Segment** (previous and next, such as trials) and **Frame** (step by a
