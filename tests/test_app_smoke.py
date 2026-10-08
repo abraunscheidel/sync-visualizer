@@ -727,3 +727,37 @@ def test_the_saved_workspace_file_is_plain_readable_data(window):
     path = window.save_workspace_clicked() or next(window.workspace_dir.glob("*.json"))
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["settings"]["navigation"]["frames"] == 7 and data["settings"]["filters"]["skip"] is False
+
+
+def test_every_input_control_says_whether_a_workspace_saves_it(window):
+    """A reminder that cannot be forgotten: add a control and this fails until you decide.
+
+    Mark it with `saved_in_workspace` (and save/restore it in that bar's `state`/`apply_state`) or with
+    `not_saved(widget, reason)`. See docs/checklists.md.
+    """
+    from PySide6.QtWidgets import QAbstractSpinBox, QCheckBox, QComboBox, QRadioButton, QSlider
+
+    inputs = (QComboBox, QAbstractSpinBox, QCheckBox, QRadioButton, QSlider)
+    unmarked = []
+    for root in (window.navigation, window.filter_bar):
+        for kind in inputs:
+            for widget in root.findChildren(kind):
+                if not widget.property("workspace"):
+                    unmarked.append(f"{type(widget).__name__} (tooltip: {widget.toolTip()!r})")
+    assert not unmarked, f"controls with no decision about saving them in a workspace: {unmarked}"
+
+
+def test_controls_marked_as_saved_really_are_saved(window):
+    """Every control marked `saved_in_workspace` must change the saved settings when it changes."""
+    before = window.settings()
+    window.navigation.count.setValue(9)
+    window.navigation.speed.setCurrentIndex(0)
+    window.filter_bar.skip.setChecked(not window.filter_bar.skip.isChecked())
+    window.filter_bar._filters["stimulus"].setCurrentIndex(1)
+    window.navigation.interval.setValue(33.0)
+    window.navigation.base.setCurrentText("Angle")
+    after = window.settings()
+    assert after["navigation"]["frames"] == 9 and after["navigation"]["speed"] != before["navigation"]["speed"]
+    assert after["filters"]["skip"] != before["filters"]["skip"]
+    assert after["filters"]["filters"]["stimulus"] != before["filters"]["filters"]["stimulus"]
+    assert after["navigation"]["interval_ms"] == 33.0 and after["navigation"]["frame_defined_by"] == "Angle"

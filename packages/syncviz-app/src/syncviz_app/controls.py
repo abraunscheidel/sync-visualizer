@@ -21,6 +21,19 @@ TIME_LABEL_INTERVAL_MS = 50
 ALL = "All"
 
 
+def saved_in_workspace(widget):
+    """Mark an input control as part of what a workspace saves (see workspace.py and docs/checklists.md).
+    Every input control must be marked either this way or with `not_saved`, which a test enforces."""
+    widget.setProperty("workspace", "saved")
+    return widget
+
+
+def not_saved(widget, reason: str):
+    """Mark an input control as deliberately left out of workspaces, saying why."""
+    widget.setProperty("workspace", f"not saved: {reason}")
+    return widget
+
+
 def _plain(value):
     """A value as plain JSON data (numpy scalars from data files become Python ones)."""
     return value.item() if hasattr(value, "item") else value
@@ -54,7 +67,7 @@ class NavigationBar(QToolBar):
             self._add_frame_group(context.stepper)
 
         self.addSeparator()
-        self.speed = QComboBox()
+        self.speed = saved_in_workspace(QComboBox())
         for s in SPEEDS:
             self.speed.addItem(f"{s:g}×", s)
         self.speed.setCurrentIndex(SPEEDS.index(1.0))
@@ -140,7 +153,7 @@ class NavigationBar(QToolBar):
         self.step_back.triggered.connect(lambda: bus.publish(StepTime(-1)))
         self.addAction(self.step_back)
 
-        self.count = QSpinBox()
+        self.count = saved_in_workspace(QSpinBox())
         self.count.setRange(1, 100000)
         self.count.setValue(stepper.count)
         self.count.setSuffix(" frames")
@@ -156,7 +169,7 @@ class NavigationBar(QToolBar):
         self.addAction(self.step_forward)
 
         self.addWidget(QLabel("  defined by "))
-        self.base = QComboBox()
+        self.base = saved_in_workspace(QComboBox())
         for name in stepper.bases:
             self.base.addItem(name)
         self.base.setCurrentText(stepper.reference or "")
@@ -164,7 +177,7 @@ class NavigationBar(QToolBar):
         self.base.currentTextChanged.connect(self._base_changed)
         self.addWidget(self.base)
 
-        self.interval = QDoubleSpinBox()
+        self.interval = saved_in_workspace(QDoubleSpinBox())
         self.interval.setRange(0.01, 600000.0)
         self.interval.setDecimals(2)
         self.interval.setSuffix(" ms")
@@ -232,7 +245,7 @@ class FilterBar(QToolBar):
             if attribute not in nav.intervals.attributes:
                 context.notes.append(f"filter {attribute!r} is not an attribute of the segments; ignored")
                 continue
-            box = QComboBox()
+            box = saved_in_workspace(QComboBox())
             box.addItem(ALL, None)
             for value in nav.intervals.unique(attribute):
                 box.addItem(str(value), value)
@@ -250,7 +263,7 @@ class FilterBar(QToolBar):
 
         # The filter says which segments match; this decides whether moving is restricted to them.
         self.addSeparator()
-        self.skip = QCheckBox(f"Skip non-matching {noun}")
+        self.skip = saved_in_workspace(QCheckBox(f"Skip non-matching {noun}"))
         self.skip.setChecked(nav.skip_hidden)
         self.skip.setToolTip(
             f"On: every way of moving (previous/next, stepping, playback, clicking the timeline) stays\n"

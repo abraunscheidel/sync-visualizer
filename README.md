@@ -43,3 +43,5 @@ pytest
 ```
 
 Data files (`*.nwb`, video) are ignored by git; put them in `data/`.
+
+Changing the app? See [docs/checklists.md](docs/checklists.md) for things that are easy to forget.
