@@ -164,7 +164,7 @@ class VideoView(View):
         return 0.0, self.n_frames / self.fps
 
     def time_base(self):
-        return RegularGrid(rate=self.fps, count=self.n_frames)        # one tick per video frame
+        return RegularGrid(rate=self.fps, count=self.n_frames, unit="frames")     # one tick per video frame
 
     def refresh(self, time: float) -> None:
         n = int(round(time * self.fps))

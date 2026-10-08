@@ -288,3 +288,28 @@ def test_arrow_keys_stay_segment_navigation_and_shift_arrows_step(window):
     assert shortcuts["◀ Previous block"] == QKeySequence("Left").toString()
     assert shortcuts["Step ▶"] == QKeySequence("Shift+Right").toString()
     assert shortcuts["◀ Step"] == QKeySequence("Shift+Left").toString()
+
+
+def test_the_step_count_says_what_it_counts_and_follows_the_chosen_grid(window):
+    bar = window.step_bar
+
+    bar.base.setCurrentText("Clip")
+    assert bar.count.suffix() == " frames"
+    bar.base.setCurrentText("Angle")
+    assert bar.count.suffix() == " samples"
+    bar.base.setCurrentText("Fixed interval")
+    assert bar.count.suffix() == " steps"
+
+
+def test_stepping_many_frames_moves_by_that_many_frames_and_not_segments(window):
+    from syncviz.core import StepTime
+    bus, tl, nav = window.context.bus, window.context.timeline, window.context.navigator
+    window.step_bar.base.setCurrentText("Clip")
+    window.step_bar.count.setValue(5)
+    bus.publish(Seek(1.0))
+    segment_before = nav.index
+
+    bus.publish(StepTime(+1))
+
+    assert tl.time == pytest.approx(1.0 + 5 / FPS)           # five video frames ahead
+    assert nav.index == segment_before                        # the trial did not change

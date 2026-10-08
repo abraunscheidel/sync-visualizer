@@ -188,9 +188,8 @@ class StepBar(QToolBar):
         self.count = QSpinBox()
         self.count.setRange(1, 100000)
         self.count.setValue(stepper.count)
-        self.count.setPrefix("× ")
-        self.count.setToolTip("How many steps each press moves")
-        self.count.valueChanged.connect(lambda v: setattr(stepper, "count", v))
+        self.count.setMinimumWidth(110)
+        self.count.valueChanged.connect(lambda v: setattr(stepper, "count", v))     # the unit is set below
 
         self.base = QComboBox()
         for name in stepper.bases:
@@ -198,6 +197,7 @@ class StepBar(QToolBar):
         self.base.setCurrentText(stepper.reference or "")
         self.base.setToolTip("What one step means: the next frame or sample of this view's data, or a fixed interval")
         self.base.currentTextChanged.connect(self._base_changed)
+        self._update_unit()
 
         self.interval = QDoubleSpinBox()
         self.interval.setRange(0.01, 600000.0)
@@ -220,9 +220,16 @@ class StepBar(QToolBar):
         self._interval_action = self.addWidget(self.interval)
         self._interval_action.setVisible(self.base.currentText() == FIXED_INTERVAL)
 
+    def _update_unit(self) -> None:
+        """Say what is being counted: "10 frames" for a video, "10 samples" for a signal."""
+        unit = getattr(self.context.stepper.base, "unit", "steps")
+        self.count.setSuffix(f" {unit}")
+        self.count.setToolTip(f"How many {unit} each Step moves")
+
     def _base_changed(self, name: str) -> None:
         self.context.stepper.reference = name
         self._interval_action.setVisible(name == FIXED_INTERVAL)
+        self._update_unit()
 
     def _interval_changed(self, milliseconds: float) -> None:
         self.context.stepper.bases[FIXED_INTERVAL] = FixedStep(milliseconds / 1000.0)

@@ -36,6 +36,7 @@ class RegularGrid:
     rate: float
     count: int | None = None
     origin: float = 0.0
+    unit: str = "ticks"              # what one tick is called, shown next to the step count
 
     def neighbor(self, time: float, direction: int) -> float | None:
         position = (time - self.origin) * self.rate
@@ -57,6 +58,7 @@ class SampleTimes:
     """Ticks at the given, possibly irregular, sample times (sorted)."""
 
     times: np.ndarray
+    unit: str = "samples"
 
     def neighbor(self, time: float, direction: int) -> float | None:
         if direction > 0:
@@ -71,6 +73,7 @@ class FixedStep:
     """Moves by exactly `interval` seconds from wherever the playhead is."""
 
     interval: float
+    unit: str = "steps"
 
     def neighbor(self, time: float, direction: int) -> float | None:
         return time + self.interval if direction > 0 else time - self.interval
