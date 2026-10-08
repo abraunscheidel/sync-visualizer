@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from time import perf_counter
+from time import perf_counter, sleep
 
 import numpy as np
 from PySide6.QtCore import QObject, QRectF, QTimer, Qt, Signal
@@ -35,6 +35,8 @@ class _Decoder(QObject):
         self._target: int | None = None
         self._stop = False
         self.native_luma = True
+        self.delay_s = 0.0                 # debugging: make every frame this slow
+        self.delay_once_s = 0.0            # debugging: make only the next frame this slow
         self._thread = threading.Thread(target=self._run, name="video-decoder", daemon=True)
         self._thread.start()
 
@@ -61,6 +63,9 @@ class _Decoder(QObject):
                         return
                     n, self._target = self._target, None
                 try:
+                    delay, self.delay_once_s = self.delay_s + self.delay_once_s, 0.0
+                    if delay:
+                        sleep(delay)
                     self.frame_ready.emit(n, reader.frame(n))
                 except Exception as exc:                       # a bad frame must not kill playback
                     self.failed.emit(f"frame {n}: {exc}")
@@ -201,6 +206,18 @@ class VideoView(View):
         h, w = image.shape
         self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
         self._shown = n
+
+    # -- debugging hooks (used by the Debug menu) ---------------------------------------
+    @property
+    def simulated_delay_s(self) -> float:
+        return self.decoder.delay_s
+
+    @simulated_delay_s.setter
+    def simulated_delay_s(self, seconds: float) -> None:
+        self.decoder.delay_s = float(seconds)
+
+    def stall_once(self, seconds: float) -> None:
+        self.decoder.delay_once_s = float(seconds)
 
     def stalled_for(self, now: float) -> float:
         if self._wanted == -1 or self._wanted == self._shown:

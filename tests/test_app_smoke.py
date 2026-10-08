@@ -425,3 +425,19 @@ def test_scrubbing_while_paused_is_never_held(window, qapp, monkeypatch):
     window.context.bus.publish(Seek(0.5))
     _pump(qapp, seconds=0.7)
     assert window.context.timeline.holding is None and not window.context.timeline.playing
+
+
+def test_debug_menu_can_slow_the_video_and_stall_it_once(window, qapp):
+    from syncviz_app.debug import DebugTools
+
+    assert window.debug is None and "Debug" not in [a.text().replace("&", "") for a in window.menuBar().actions()]
+    debug = DebugTools(window)
+    video = next(v for v in window.views if v.type_name == "video")
+    debug.set_delay(0.2)
+    assert video.decoder.delay_s == 0.2
+    debug.set_delay(0.0)
+    debug.stall_once()
+    assert video.decoder.delay_once_s > 0
+    window.context.bus.publish(Seek(0.5))
+    assert _pump(qapp, until=lambda: video.decoder.delay_once_s == 0, seconds=0)
+    assert "paused" in debug.text() and "Clip" in debug.text()

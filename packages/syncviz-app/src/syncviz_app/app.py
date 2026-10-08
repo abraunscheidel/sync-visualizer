@@ -18,7 +18,7 @@ from syncviz_app.views.base import View
 DEFAULT_STEP_INTERVAL_MS = 10.0
 
 
-def build_window(project_path: str | Path) -> MainWindow:
+def build_window(project_path: str | Path, debug: bool = False) -> MainWindow:
     project = load_project(project_path)
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
@@ -72,4 +72,4 @@ def build_window(project_path: str | Path) -> MainWindow:
     if "view" in step_spec and step_spec["view"] not in bases:
         context.notes.append(f"step view {step_spec['view']!r} has no time grid; using {context.stepper.reference!r}")
 
-    return MainWindow(project, context, views)
+    return MainWindow(project, context, views, debug=debug)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -14,13 +15,15 @@ from syncviz_app.app import build_window
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="syncviz")
     parser.add_argument("project", help="path to a project YAML file")
+    parser.add_argument("--debug", action="store_true",
+                        help="add the Debug menu (slow-decoding simulation, live status); also set by SYNCVIZ_DEBUG=1")
     parser.add_argument("--screenshot", metavar="PNG", help="render one frame to a file and exit (for checking)")
     parser.add_argument("--segment-step", type=int, default=0, help="with --screenshot: step this many segments first")
     parser.add_argument("--time", type=float, help="with --screenshot: seek to this shared time first")
     args = parser.parse_args(argv)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    window = build_window(args.project)
+    window = build_window(args.project, debug=args.debug or os.environ.get("SYNCVIZ_DEBUG") == "1")
     window.show()
 
     if args.screenshot:

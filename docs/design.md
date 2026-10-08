@@ -1945,3 +1945,10 @@ progress for 0.4 s while playing (`View.stalled_for`), the `StallGuard` (`syncvi
 every view has caught up, and pressing pause during a hold is a real pause. The toolbar shows
 "Buffering <view>…" and the video's loading cue changes to "Buffering…". Nothing is held while paused, so
 scrubbing and stepping are never interrupted; the view shows its normal loading cue after 180 ms.
+
+### 34.4 Debug mode
+
+`syncviz --debug` (or `SYNCVIZ_DEBUG=1`, or the "Sync Visualizer (debug).bat" launcher) adds a Debug menu:
+simulate slow decoding (50 ms to 1.5 s per frame), stall the next frame for 3 s, and a live status line
+(playing/holding, governor scale, how long each view has waited). Off by default. Views opt in by exposing
+`simulated_delay_s` and `stall_once`, so the window stays source-agnostic.

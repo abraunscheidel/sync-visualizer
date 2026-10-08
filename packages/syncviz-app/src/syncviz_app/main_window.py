@@ -13,6 +13,7 @@ from PySide6.QtCore import QElapsedTimer, QTimer, Qt
 from PySide6.QtWidgets import QDockWidget, QMainWindow, QVBoxLayout, QWidget
 
 from syncviz_app.context import AppContext
+from syncviz_app.debug import DebugTools
 from syncviz_app.controls import FilterBar, NavigationBar
 from syncviz_app.info_panel import InfoPanel
 from syncviz_app.project import Project
@@ -25,7 +26,7 @@ PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, project: Project, context: AppContext, views: list[View]) -> None:
+    def __init__(self, project: Project, context: AppContext, views: list[View], debug: bool = False) -> None:
         super().__init__()
         self.project, self.context, self.views = project, context, views
         self.setWindowTitle(f"Sync Visualizer — {project.name}")
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
         self.scheduler = RefreshScheduler(views)
         context.timeline.subscribe(lambda _t: self.scheduler.changed())
         self.stall_guard = StallGuard(context.timeline, views)
+        self.debug = DebugTools(self) if debug else None      # off unless run in debug mode
         self._pump_timer = QTimer(self)
         self._pump_timer.setTimerType(Qt.TimerType.PreciseTimer)      # the governor reads this timer's lateness
         self._pump_timer.timeout.connect(self._pump)
