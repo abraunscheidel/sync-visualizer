@@ -8,6 +8,7 @@ from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL
 from syncviz_app.context import AppContext
+from syncviz_app.layout import layout_path, load_layout
 from syncviz_app.main_window import MainWindow
 from syncviz_app.project import load_project
 from syncviz_app.view_factory import create_view, fit_timeline, register_view
@@ -17,8 +18,11 @@ from syncviz_app.views.base import View
 DEFAULT_STEP_INTERVAL_MS = 10.0
 
 
-def build_window(project_path: str | Path, debug: bool = False) -> MainWindow:
+def build_window(project_path: str | Path, debug: bool = False, use_layout: bool = True) -> MainWindow:
+    """`use_layout` applies (and later saves) what the user changed since the project file was written."""
     project = load_project(project_path)
+    layout_file = layout_path(project_path) if use_layout else None
+    layout = load_layout(layout_file) if layout_file else None
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
@@ -34,7 +38,10 @@ def build_window(project_path: str | Path, debug: bool = False) -> MainWindow:
         break
 
     views: list[View] = []
-    for spec in project.view_specs:
+    specs = project.view_specs
+    if layout is not None:
+        specs = [s for s in specs if (s.get("title") or s["type"]) not in layout.removed] + layout.added
+    for spec in specs:
         view = create_view(context, spec)
         if view is None:
             continue
@@ -61,4 +68,4 @@ def build_window(project_path: str | Path, debug: bool = False) -> MainWindow:
     if "view" in step_spec and step_spec["view"] not in bases:
         context.notes.append(f"step view {step_spec['view']!r} has no time grid; using {context.stepper.reference!r}")
 
-    return MainWindow(project, context, views, debug=debug)
+    return MainWindow(project, context, views, debug=debug, layout=layout, layout_file=layout_file)

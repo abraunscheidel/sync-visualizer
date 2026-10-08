@@ -23,7 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    window = build_window(args.project, debug=args.debug or os.environ.get("SYNCVIZ_DEBUG") == "1")
+    window = build_window(args.project, debug=args.debug or os.environ.get("SYNCVIZ_DEBUG") == "1",
+                          use_layout=not args.screenshot)
     window.show()
 
     if args.screenshot:

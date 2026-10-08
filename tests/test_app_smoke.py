@@ -526,3 +526,81 @@ def test_closing_a_panel_unticks_it_in_the_sidebar(window, qapp):
 
 def test_the_views_menu_is_gone_because_the_sidebar_replaces_it(window):
     assert "Views" not in [a.text().replace("&", "") for a in window.menuBar().actions()]
+
+
+# -- the layout is kept beside the project and applied next time ---------------------------
+def _reopen(window, qapp):
+    """Close the window (which saves its layout) and open the same project again."""
+    path = window.project.path
+    window.close()
+    qapp.processEvents()
+    again = build_window(path)
+    again.show()
+    return again
+
+
+def test_added_views_come_back_the_next_time_the_project_opens(window, qapp):
+    from syncviz_app.add_view_dialog import collect_candidates
+
+    spec = next(c.spec for c in collect_candidates(window.source_catalog())["Time series plot"])
+    added = window.add_view(spec)
+    again = _reopen(window, qapp)
+    try:
+        assert added.title in [v.title for v in again.views]
+        assert again.views_panel.list.count() == len(again.views)
+    finally:
+        again.close()
+
+
+def test_a_removed_project_view_stays_removed_and_can_be_brought_back_by_resetting(window, qapp):
+    video = next(v for v in window.views if v.type_name == "video")
+    title = video.title
+    window.remove_view(video)
+    again = _reopen(window, qapp)
+    try:
+        assert title not in [v.title for v in again.views]
+        again.reset_layout()
+    finally:
+        again.close()
+    third = build_window(window.project.path)
+    try:
+        assert title in [v.title for v in third.views]
+    finally:
+        third.close()
+
+
+def test_hidden_panels_stay_hidden_after_reopening(window, qapp):
+    qapp.processEvents()
+    window.docks[1].close()
+    _pump(qapp, seconds=0.1)
+    again = _reopen(window, qapp)
+    try:
+        _pump(qapp, seconds=0.1)
+        assert not again.docks[1].isVisible() and again.docks[0].isVisible()
+        assert again.views_panel.list.item(1).checkState() == Qt.CheckState.Unchecked
+    finally:
+        again.close()
+
+
+def test_a_corrupt_layout_file_is_ignored(window, qapp):
+    from syncviz_app.layout import layout_path
+
+    path = window.project.path
+    window.close()
+    layout_path(path).write_text("{not json", encoding="utf-8")
+    again = build_window(path)
+    try:
+        assert len(again.views) == 3
+    finally:
+        again.close()
+
+
+def test_screenshot_mode_neither_reads_nor_writes_a_layout(window, qapp):
+    from syncviz_app.layout import layout_path
+
+    path = window.project.path
+    window.close()
+    layout_path(path).unlink(missing_ok=True)
+    plain = build_window(path, use_layout=False)
+    plain.close()
+    assert not layout_path(path).exists()

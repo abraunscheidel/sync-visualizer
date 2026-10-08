@@ -1964,3 +1964,12 @@ dialog by implementing it). **Remove** discards a view. Both go through `MainWin
 update colours, extents, the timeline's range, the frame-definition choices and the coverage strip
 (`view_factory.py`). Views added in the UI last for the session; they are not written back to the project
 file yet.
+
+### 28.3 Saved layout
+
+The project file is the author's description of the data and is never rewritten. What the user changes
+while working is saved beside it, when the window closes, in `<project>.layout.json` (git-ignored): the
+views added in the UI, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar
+positions (which include which panels are hidden). It is applied on top of the project the next time it
+opens. A missing, unreadable or wrong-version file is ignored. **Layout > Reset layout** deletes it
+(applies at next start), and `--screenshot` mode neither reads nor writes it.
