@@ -233,3 +233,89 @@ def test_label_is_display_only_and_numbers_default_to_position():
     bus.publish(SelectSegment(2))
 
     assert nav.label == "Epoch" and nav.number == 3
+
+
+# --- following the playhead and skipping filtered segments ---------------------------------
+
+def make_following_navigator():
+    bus = ActionBus()
+    tl = Timeline(bus, 0.0, 40.0)
+    nav = SegmentNavigator(bus, make_intervals(), label="Trial", index_attribute="number")
+    nav.follow(tl)
+    return bus, tl, nav
+
+
+def test_current_segment_follows_the_playhead_without_a_filter():
+    bus, tl, nav = make_following_navigator()
+
+    bus.publish(Seek(22.0))                    # inside the third segment
+
+    assert nav.index == 2 and nav.number == 7
+    assert tl.selection == (20.0, 29.0)
+
+
+def test_unfiltered_playback_plays_straight_through_gaps():
+    bus, tl, nav = make_following_navigator()
+    tl.seek(8.0)
+    bus.publish(SetPlaying(True))
+
+    tl.advance(1.5)                            # 9.5 s: in the gap between segments 0 and 1
+
+    assert tl.time == 9.5 and tl.playing
+
+
+def test_playback_skips_to_the_next_matching_segment_when_filtered():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")              # segments 0 and 2 match; 1 and 3 do not
+    tl.seek(8.0)
+    bus.publish(SetPlaying(True))
+
+    tl.advance(1.5)                            # 9.5 s is in a gap, with a match ahead
+
+    assert tl.time == 20.0 and tl.playing
+    assert nav.index == 2 and tl.selection == (20.0, 29.0)
+
+
+def test_playback_crossing_into_a_hidden_segment_skips_it():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+    tl.seek(8.9)
+    bus.publish(SetPlaying(True))
+
+    tl.advance(1.2)                            # crosses into segment 1 (concave, hidden)
+
+    assert tl.time == 20.0 and nav.index == 2
+
+
+def test_playback_pauses_at_the_end_of_the_last_matching_segment():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+    nav.select(2)
+    tl.seek(28.0)
+    bus.publish(SetPlaying(True))
+
+    tl.advance(2.0)                            # past segment 2 into hidden segment 3
+
+    assert not tl.playing
+    assert nav.index == 2 and tl.time < 29.0
+
+
+def test_skipping_can_be_turned_off():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+    nav.skip_hidden = False
+    tl.seek(8.0)
+    bus.publish(SetPlaying(True))
+
+    tl.advance(3.0)                            # plays on through the hidden segment
+
+    assert tl.time == 11.0 and tl.playing
+
+
+def test_seeking_by_hand_into_a_hidden_segment_is_allowed_while_paused():
+    bus, tl, nav = make_following_navigator()
+    nav.filter(stimulus="convex")
+
+    bus.publish(Seek(15.0))                    # a hidden (concave) segment
+
+    assert tl.time == 15.0 and not tl.playing

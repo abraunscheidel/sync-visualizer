@@ -358,6 +358,18 @@ Navigation is performed through actions (`SelectSegment`, `StepSegment`), which
 move the shared timeline's playhead and selection, so views stay in step without
 knowing about segments.
 
+The navigator also follows the playhead:
+
+- The current segment (and the timeline's selection) tracks the playhead as it moves
+  into other matching segments, whether by playback or by the user seeking.
+- **While a filter is active, playback skips what does not match.** When the playhead
+  leaves a matching segment, whether into a segment the filter hides or into a gap,
+  playback jumps to the start of the next matching segment and keeps playing. After the
+  last match it pauses. Without a filter, playback runs straight through, gaps included.
+- Seeking by hand into a hidden segment is always allowed while paused. Starting
+  playback from one skips ahead, as above. A toolbar option ("Skip non-matching ...",
+  or `skip_filtered: false` in the project) plays straight through instead.
+
 ---
 
 ## 11. Selections and Data Views

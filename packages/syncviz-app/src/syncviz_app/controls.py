@@ -56,6 +56,15 @@ class ControlsBar(QToolBar):
                 self.addWidget(QLabel(f"{attribute}: "))
                 self.addWidget(box)
                 self._filters[attribute] = box
+            # With a filter active, playback normally jumps over segments that don't match it.
+            # Unticking this plays straight through everything instead.
+            self.addSeparator()
+            self.skip = QAction(f"Skip non-matching {nav.label.lower()}s", self)
+            self.skip.setCheckable(True)
+            self.skip.setChecked(nav.skip_hidden)
+            self.skip.setToolTip("While a filter is active, playback skips segments that don't match it")
+            self.skip.toggled.connect(lambda on: setattr(nav, "skip_hidden", on))
+            self.addAction(self.skip)
             nav.subscribe(lambda _n: self._update_segment_label())
             self._update_segment_label()
 
@@ -98,6 +107,7 @@ class ControlsBar(QToolBar):
     def _update_segment_label(self) -> None:
         nav = self.context.navigator
         self.segment_label.setText(f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})  ")
+        self.skip.setEnabled(nav.filtered)                  # nothing to skip without a filter
 
     def _filters_changed(self, _index: int) -> None:
         nav = self.context.navigator

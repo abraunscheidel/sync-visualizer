@@ -48,5 +48,8 @@ def build_window(project_path: str | Path) -> MainWindow:
 
     if context.navigator is not None:
         context.navigator.select(context.navigator.index)      # move the playhead to the first segment
+        first_spec = next(iter(project.segmentation_specs.values()))
+        context.navigator.skip_hidden = bool(first_spec.get("skip_filtered", True))
+        context.navigator.follow(timeline)                     # current segment tracks the playhead from here on
 
     return MainWindow(project, context, views)
