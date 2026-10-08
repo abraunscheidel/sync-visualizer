@@ -329,6 +329,35 @@ Groupings may be:
 
 A trial is therefore not a special core concept. It is one possible grouping.
 
+### 10.1 Intervals and segments
+
+The core vocabulary for this is generic:
+
+- An **`IntervalSeries`** is a resource: ordered time intervals, each with named
+  attribute columns (for a trial table: stimulus, outcome, choice, and so on). It
+  is the interval counterpart of `EventSeries`, and detected contacts or stimulus
+  periods are the same type.
+- A **segmentation** is a configured use of an interval series for navigation:
+  stepping through its intervals one at a time, optionally filtered by attribute
+  values. The core calls these **segments**.
+- The word shown to the user ("Trial", "Epoch", "Bout", "Stimulus period") is a
+  `label` in the project configuration. Core code and core tests never use it.
+- Attribute columns are the dimensions a user can filter by. Which ones are
+  offered is configured, not hardcoded.
+
+```yaml
+segmentations:
+  trials:
+    label: Trial
+    from: session:intervals/trials
+    number_attribute: trial
+    filters: [stimulus, outcome]
+```
+
+Navigation is performed through actions (`SelectSegment`, `StepSegment`), which
+move the shared timeline's playhead and selection, so views stay in step without
+knowing about segments.
+
 ---
 
 ## 11. Selections and Data Views
