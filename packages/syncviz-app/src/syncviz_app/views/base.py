@@ -34,6 +34,9 @@ class View(QWidget):
         self.spec = spec
         self.title: str = spec.get("title") or self.type_name
         # Upper limit on how often this view redraws. A project can override it per view.
+        # Display lag in seconds: a view that runs `lag` behind shows what the playhead showed `lag` ago (negative = ahead).
+        # It changes only what this view draws, never the data or the timeline.
+        self.lag: float = 0.0
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
 
     @classmethod

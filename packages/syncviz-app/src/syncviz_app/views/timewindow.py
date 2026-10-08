@@ -53,7 +53,8 @@ class TimeWindowView(View):
         viewbox = self.plot.getPlotItem().vb
         if not viewbox.sceneBoundingRect().contains(event.scenePos()):
             return
-        self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()))
+        # The click is in this view's time; the playhead is `lag` later.
+        self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()) + self.lag)
 
     def seek_from_time(self, time: float) -> bool:
         """Move the playhead to a clicked time, unless it is not allowed (see Timeline.allows)."""

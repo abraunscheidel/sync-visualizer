@@ -9,7 +9,7 @@ views a project declares and the ones the user adds later.
 from __future__ import annotations
 
 from syncviz import plugins
-from syncviz.core.stepping import FIXED_INTERVAL
+from syncviz.core.stepping import FIXED_INTERVAL, Shifted
 from syncviz_app.colors import view_color
 from syncviz_app.context import AppContext
 from syncviz.sources import MissingDataError
@@ -52,7 +52,7 @@ def register_view(context: AppContext, view: View, color_index: int) -> None:
         context.coverage[view.title] = view.coverage()
     stepper = context.stepper
     if stepper is not None and view.time_base() is not None:
-        stepper.bases[view.title] = view.time_base()
+        stepper.bases[view.title] = Shifted(view.time_base(), lambda view=view: view.lag)
 
 
 def unregister_view(context: AppContext, view: View) -> None:

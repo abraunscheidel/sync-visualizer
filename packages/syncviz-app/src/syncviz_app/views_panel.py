@@ -9,8 +9,10 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QDoubleSpinBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
+
+from syncviz_app.controls import saved_in_workspace
 
 
 def _swatch(colour: str) -> QIcon:
@@ -39,6 +41,26 @@ class ViewsPanel(QWidget):
         row.addWidget(self.add_button)
         row.addWidget(self.remove_button)
         layout.addLayout(row)
+        shift_row = QHBoxLayout()
+        shift_row.addWidget(QLabel("Time shift"))
+        self.lag_spin = saved_in_workspace(QDoubleSpinBox())
+        self.lag_spin.setRange(-10000.0, 10000.0)
+        self.lag_spin.setDecimals(1)
+        self.lag_spin.setSingleStep(1.0)
+        self.lag_spin.setSuffix(" ms")
+        self.lag_spin.setToolTip(
+            "Only changes what the selected view draws, to line things up by eye; the data is untouched.\n"
+            "Positive: the view runs behind the playhead (shows what happened that long ago).\n"
+            "Negative: it runs ahead (shows what is about to happen)."
+        )
+        self.lag_reset = QPushButton("Reset")
+        self.lag_reset.setToolTip("Remove the shift from the selected view")
+        shift_row.addWidget(self.lag_spin, 1)
+        shift_row.addWidget(self.lag_reset)
+        layout.addLayout(shift_row)
+        self.lag_spin.valueChanged.connect(self._lag_edited)
+        self.lag_spin.editingFinished.connect(self.lag_spin.clearFocus)       # keep the keyboard shortcuts working
+        self.lag_reset.clicked.connect(lambda: self.lag_spin.setValue(0.0))
         self.save_button = QPushButton("Save workspace")
         self.save_button.setToolTip("Save the views and panel positions now (Ctrl+S); this also happens when the window closes")
         layout.addWidget(self.save_button)
@@ -48,6 +70,7 @@ class ViewsPanel(QWidget):
         self.list.itemChanged.connect(self._item_toggled)
         self.list.itemDoubleClicked.connect(self._bring_to_front)
         self.list.currentItemChanged.connect(lambda *_: self._update_buttons())
+        self.list.currentItemChanged.connect(lambda *_: self.show_lag())
         self.rebuild()
 
     # -- content -------------------------------------------------------------------------
@@ -67,6 +90,7 @@ class ViewsPanel(QWidget):
                 dock.toggleViewAction().toggled.connect(self.sync)
         self.list.blockSignals(False)
         self._update_buttons()
+        self.show_lag()
 
     def sync(self, *_args) -> None:
         """Make the ticks match which panels are showing."""
@@ -82,6 +106,25 @@ class ViewsPanel(QWidget):
 
     def _update_buttons(self) -> None:
         self.remove_button.setEnabled(self.list.currentItem() is not None)
+        has = self.list.currentItem() is not None
+        self.lag_spin.setEnabled(has)
+        self.lag_reset.setEnabled(has)
+
+    def _selected_view(self):
+        item = self.list.currentItem()
+        return None if item is None else item.data(Qt.ItemDataRole.UserRole)
+
+    def show_lag(self) -> None:
+        """Show the selected view's current shift in the field (without changing it)."""
+        view = self._selected_view()
+        self.lag_spin.blockSignals(True)
+        self.lag_spin.setValue(0.0 if view is None else view.lag * 1000.0)
+        self.lag_spin.blockSignals(False)
+
+    def _lag_edited(self, milliseconds: float) -> None:
+        view = self._selected_view()
+        if view is not None:
+            self.window.set_view_lag(view, milliseconds)
 
     # -- actions -------------------------------------------------------------------------
     def _dock_of(self, item):

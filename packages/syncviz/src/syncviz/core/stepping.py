@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 import numpy as np
 
@@ -80,6 +80,20 @@ class LazySampleTimes:
             return float(self.times[i]) if i < len(self.times) else None
         i = bisect_array(self.times, time - EPS, "left") - 1
         return float(self.times[i]) if i >= 0 else None
+
+
+@dataclass(frozen=True)
+class Shifted:
+    """Another time base seen through a view's display lag: if the view runs `shift()` seconds behind the
+    playhead, its ticks are that much later. `shift` is read each time, so changing the lag takes effect at once."""
+
+    base: object
+    shift: Callable[[], float]
+
+    def neighbor(self, time: float, direction: int) -> float | None:
+        shift = self.shift()
+        found = self.base.neighbor(time - shift, direction)
+        return None if found is None else found + shift
 
 
 @dataclass(frozen=True)

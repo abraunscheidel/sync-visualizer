@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         saved = workspace or Workspace()
         self._added: dict[str, dict] = {s.get("title") or s["type"]: s for s in saved.added}
         self._removed: list[str] = list(saved.removed)
+        self._lags: dict[str, float] = {}                       # display lag in ms by view title (see View.lag)
         self.project, self.context, self.views = project, context, views
         self._colors_used = len(views)                       # colours are never reused, even after a removal
         self._set_title()
@@ -152,14 +153,40 @@ class MainWindow(QMainWindow):
 
     def settings(self) -> dict:
         """The working state apart from the arrangement: filters, frame step and speed."""
-        out = {"navigation": self.navigation.state()}
+        out = {"navigation": self.navigation.state(), "view_lags": dict(self._lags)}
         if self.filter_bar is not None:
             out["filters"] = self.filter_bar.state()
         if self.collection_bar is not None:
             out["collections"] = self.collection_bar.state()
         return out
 
+    def set_view_lag(self, view: View, milliseconds: float) -> None:
+        """Shift one view's display by `milliseconds` (positive: it runs behind the playhead). Display only."""
+        if milliseconds:
+            self._lags[view.title] = float(milliseconds)
+        else:
+            self._lags.pop(view.title, None)
+        view.lag = float(milliseconds) / 1000.0
+        if view in self.views:
+            dock = self.docks[self.views.index(view)]
+            dock.setWindowTitle(self._dock_title(view))
+        self.scheduler.changed()                              # redraw at the new offset, even while paused
+
+    @staticmethod
+    def _dock_title(view: View) -> str:
+        ms = view.lag * 1000.0
+        return view.title if not ms else f"{view.title}   [{ms:+g} ms]"
+
+    def _apply_lags(self, lags: dict[str, float]) -> None:
+        """Give every view the lag in `lags` (by title), and the rest the lag their project file gives (lag_ms), else none."""
+        self._lags = {}
+        for view in self.views:
+            self.set_view_lag(view, float(lags.get(view.title, view.spec.get("lag_ms", 0.0))))
+        if self.views_panel is not None:
+            self.views_panel.show_lag()
+
     def _apply_settings(self, settings: dict) -> None:
+        self._apply_lags(settings.get("view_lags", {}))
         self.navigation.apply_state(settings.get("navigation", {}))
         if self.filter_bar is not None:
             self.filter_bar.apply_state(settings.get("filters", {}))
@@ -267,6 +294,7 @@ class MainWindow(QMainWindow):
             context.navigator.replace_intervals(intervals)
             self.filter_bar.repopulate()
         self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)))
+        self._apply_lags(dict(self._lags))
         self._views_changed()
         self._restore_collection()
         self._set_title()
@@ -381,6 +409,7 @@ class MainWindow(QMainWindow):
         register_view(self.context, view, self._colors_used)
         self._colors_used += 1
         self.docks.append(self._make_dock(view, spec.get("area", "right")))
+        self.set_view_lag(view, self._lags.get(view.title, float(spec.get("lag_ms", 0.0))))
         if track:
             self._added[view.title] = spec
         if refresh:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
-from syncviz.core.stepping import FIXED_INTERVAL
+from syncviz.core.stepping import FIXED_INTERVAL, Shifted
 from syncviz_app.context import AppContext
 from syncviz_app.workspace import DEFAULT_NAME, workspaces_dir, load_workspace
 from syncviz_app.main_window import MainWindow
@@ -68,7 +68,8 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     # can change it) unless the project names one:   step: {view: "Whisker video"}  or  {interval_ms: 25}
     step_spec = project.config.get("step") or {}
     interval_ms = float(step_spec.get("interval_ms", DEFAULT_STEP_INTERVAL_MS))
-    bases = {view.title: view.time_base() for view in views if view.time_base() is not None}
+    bases = {view.title: Shifted(view.time_base(), lambda view=view: view.lag)       # through the view's display lag
+             for view in views if view.time_base() is not None}
     bases[FIXED_INTERVAL] = FixedStep(interval_ms / 1000.0)
     reference = FIXED_INTERVAL if "interval_ms" in step_spec else step_spec.get("view")
     context.stepper = Stepper(bus, timeline, bases, reference)

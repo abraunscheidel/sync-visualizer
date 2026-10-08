@@ -84,7 +84,7 @@ class RefreshScheduler:
                 continue                                     # up to date, or not on screen
             if not force and now < self._due.get(key, 0.0):
                 continue
-            view.refresh(time_value)
+            view.refresh(time_value - getattr(view, "lag", 0.0))      # each view draws its own time (see View.lag)
             self._drawn[key] = self._version
             # Advance from the previous due time, not from now: the pump only looks every few
             # milliseconds, so scheduling from "now" would round every rate down to a multiple

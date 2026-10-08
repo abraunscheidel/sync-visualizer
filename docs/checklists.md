@@ -18,6 +18,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 ## Adding a view type
 
 - [ ] Register the entry point in the package's `pyproject.toml` (group `syncviz.views`).
+- [ ] A view must draw the time it is given and nothing else (the scheduler passes `playhead - lag`, §28.5); never read
+  the timeline's own time inside a view, and convert any time a click produces back with `+ self.lag`.
 - [ ] Implement `candidates(catalog)` so it appears in **Add view** (§28.2), and `display_name`.
 - [ ] Report `extent()` and, if it has real dropouts, `coverage()`, so the timeline strip is honest.
 - [ ] If it has a natural grid of ticks, implement `time_base()` so it can define a frame.
