@@ -13,7 +13,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
 from syncviz import plugins
 from syncviz_app.details_panel import DetailsPanel
-from syncviz_app.target_actions import TargetAction
+from syncviz_app.commands import Command
 from syncviz_app.loading import LoadingScreen, run_in_background
 from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         details_dock.setObjectName("details")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)
         self.details_dock = details_dock
-        self._register_target_actions()
+        self._register_commands()
 
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
         self.view_host.setWindowFlags(Qt.WindowType.Widget)
@@ -173,16 +173,16 @@ class MainWindow(QMainWindow):
             self.views_panel.sync()
         self._apply_settings(saved.settings)
 
-    def _register_target_actions(self) -> None:
+    def _register_commands(self) -> None:
         """The actions that need the window: showing the Details panel, opening a target as a view, and those of the views."""
-        registry = self.context.actions
+        registry = self.context.commands
 
         def show_details(target, _origin) -> None:
             self.context.selection.set(target)
             self.details_dock.show()
             self.details_dock.raise_()
 
-        def ways_to_open(target, temporary: bool) -> list[TargetAction]:
+        def ways_to_open(target, origin, temporary: bool) -> list[Command]:
             out = []
             for name in sorted(plugins.available("views")):
                 try:
@@ -190,21 +190,23 @@ class MainWindow(QMainWindow):
                     spec = view_class.spec_for(target)
                 except Exception:
                     continue
+                if origin is not None and type(origin) is view_class:
+                    continue                  # the same kind of view for the same data is a filter of this view, not a new view
                 if spec:
                     show = (lambda _t, _o, spec=spec: self.show_temporary(spec)) if temporary else \
                            (lambda _t, _o, spec=spec: self.add_view(spec))
                     prefix = "peek" if temporary else "open_as_view"
-                    out.append(TargetAction(f"{prefix}:{name}", view_class.display_name or name, show))
+                    out.append(Command(f"{prefix}:{name}", view_class.display_name or name, show))
             return out
 
-        registry.register(TargetAction("show_details", "Show details", show_details,
+        registry.register(Command("show_details", "Show details", show_details,
                                        description="Select this and bring up the Details panel"))
-        registry.register(TargetAction("open_as_view", "Open as view", children=lambda t: ways_to_open(t, False),
+        registry.register(Command("open_as_view", "Open as view", children=lambda t, o=None: ways_to_open(t, o, False),
                                        description="Add a view that shows this to the views list"))
-        registry.register(TargetAction("peek", "Show in temporary view", children=lambda t: ways_to_open(t, True),
+        registry.register(Command("peek", "Show in temporary view", children=lambda t, o=None: ways_to_open(t, o, True),
                                        description="Look at this in a view that is not kept: the next one replaces it, and it "
                                                    "follows what you select until you pin it with Keep"))
-        registry.add_provider(lambda: [a for view in self.views for a in view.target_actions()])
+        registry.add_provider(lambda: [a for view in self.views for a in view.commands()])
         for action in registry.all():                                  # keyboard shortcuts act on the selection
             if action.shortcut:
                 shortcut = QShortcut(QKeySequence(action.shortcut), self)

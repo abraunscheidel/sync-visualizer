@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from syncviz.inspection import Target
 from syncviz.sources import DataEntry
 from syncviz_app.context import AppContext
-from syncviz_app.target_actions import build_menu
+from syncviz_app.commands import build_menu
 
 
 def describe_delay(milliseconds: float, sentence: bool = False) -> str:
@@ -116,8 +116,8 @@ class View(QWidget):
         for widget in widgets:
             widget.installEventFilter(self)
 
-    def target_actions(self) -> list:
-        """Actions this view adds for the items it shows (`TargetAction`s), beside the ones every item gets."""
+    def commands(self) -> list:
+        """Actions this view adds for the items it shows (`Command`s), beside the ones every item gets."""
         return []
 
     @classmethod
@@ -128,10 +128,10 @@ class View(QWidget):
 
     def show_menu(self, pos: QPoint, global_pos) -> None:
         """The context menu: the actions that apply to what is under `pos`."""
-        registry = self.context.actions
+        registry = self.context.commands
         target = self.target_at(pos) if registry is not None else None
         if target is not None:
-            actions = registry.for_target(target)
+            actions = registry.for_target(target, self)
             if actions:
                 build_menu(actions, target, self, self).exec(global_pos)
 

@@ -268,7 +268,7 @@ def _labels(actions):
 
 
 def test_a_target_is_offered_only_the_actions_that_apply_to_it(window):
-    registry = window.context.actions
+    registry = window.context.commands
     row = Target("session", "units", "events", "12", "Unit 12")
     labels = _labels(registry.for_target(row))
     assert "Select" in labels and "Copy details" in labels and "Show details" in labels
@@ -281,7 +281,7 @@ def test_a_target_is_offered_only_the_actions_that_apply_to_it(window):
 
 
 def test_open_as_view_is_a_submenu_listing_each_way_the_target_can_be_shown(window):
-    registry = window.context.actions
+    registry = window.context.commands
     events = registry.get("open_as_view")
     names = _labels(events.children(Target("session", "units", "events", "12", "Unit 12")))
     assert {"Events and intervals", "Indicator lights"} <= set(names) and "Time series plot" not in names
@@ -292,7 +292,7 @@ def test_open_as_view_is_a_submenu_listing_each_way_the_target_can_be_shown(wind
 
 def test_opening_a_target_as_a_view_adds_that_view(window):
     before = len(window.views)
-    registry = window.context.actions
+    registry = window.context.commands
     target = Target("session", "units", "events", "12", "Unit 12")
     child = next(a for a in registry.get("open_as_view").children(target) if a.label == "Indicator lights")
     child.run(target, None)
@@ -302,8 +302,8 @@ def test_opening_a_target_as_a_view_adds_that_view(window):
 
 def test_the_menu_is_built_from_the_registry_with_a_submenu_and_its_shortcut_shown(window):
     from PySide6.QtWidgets import QMenu
-    from syncviz_app.target_actions import build_menu
-    registry = window.context.actions
+    from syncviz_app.commands import build_menu
+    registry = window.context.commands
     target = Target("session", "units", "events", "12", "Unit 12")
     window.context.selection.set(target)
     menu = build_menu(registry.for_target(target), target, None)
@@ -326,8 +326,8 @@ def test_the_context_menu_of_a_view_is_for_what_is_under_the_pointer(window, mon
 
 
 def test_clicks_run_the_actions_the_project_binds_to_them(window):
-    window.context.actions.bindings["click"] = "show_details"
-    window.context.actions.bindings["double_click"] = "copy_details"
+    window.context.commands.bindings["click"] = "show_details"
+    window.context.commands.bindings["double_click"] = "copy_details"
     view = _units(window)
     view.resize(600, 400)
     view._pressed(view.lamps.mapFrom(view, _tile_centre(view, "Unit 12 · L5b")), False)
@@ -337,12 +337,12 @@ def test_clicks_run_the_actions_the_project_binds_to_them(window):
 
 
 def test_a_view_can_add_its_own_actions_and_they_apply_only_where_it_says(window):
-    from syncviz_app.target_actions import TargetAction
+    from syncviz_app.commands import Command
     ran = []
     view = _units(window)
-    view.target_actions = lambda: [TargetAction("jump", "Jump to next occurrence", lambda t, o: ran.append(t.member),
+    view.commands = lambda: [Command("jump", "Jump to next occurrence", lambda t, o: ran.append(t.member),
                                                 applies=lambda t: t.kind == "events")]
-    registry = window.context.actions
+    registry = window.context.commands
     assert "Jump to next occurrence" in _labels(registry.for_target(Target("session", "units", "events", "12")))
     assert "Jump to next occurrence" not in _labels(registry.for_target(Target("session", "x", "intervals")))
     assert registry.run("jump", Target("session", "units", "events", "12")) and ran == ["12"]
@@ -352,7 +352,7 @@ def test_seeking_from_the_pointer_time_on_a_shifted_view_adds_its_lag(window):
     view = next(v for v in window.views if v.title == "Angle")
     window.set_view_lag(view, 500.0)
     target = Target("session", "p", "timeseries", "angle", "Angle", at=2.0)
-    assert window.context.actions.run("seek", target, view)
+    assert window.context.commands.run("seek", target, view)
     assert window.context.timeline.time == pytest.approx(2.5)
 
 
@@ -376,7 +376,7 @@ UNIT_12 = Target("session", "units", "events", "12", "Unit 12 · L5b")
 
 
 def _peek(window, target, view_type="tracks"):
-    child = next(a for a in window.context.actions.get("peek").children(target) if a.id == f"peek:{view_type}")
+    child = next(a for a in window.context.commands.get("peek").children(target) if a.id == f"peek:{view_type}")
     child.run(target, None)
     return next(v for v in window.views if v.temporary)
 
@@ -456,3 +456,14 @@ def test_a_plot_follows_the_selected_series(window):
 def test_views_that_cannot_follow_offer_no_such_setting(window):
     view = _units(window)
     assert all(s.key != "follow_selection" for s in view.settings())
+
+
+def test_open_as_view_never_offers_the_origins_own_kind_for_the_same_data(window):
+    registry = window.context.commands
+    view = _units(window)
+    view.resize(600, 400)
+    target = view.target_at(_tile_centre(view, "Unit 12 · L5b"))
+    labels = lambda cmd: [c.label for c in registry.get(cmd).children(target, view)]
+    assert "Indicator lights" not in labels("open_as_view") and "Events and intervals" in labels("open_as_view")
+    assert "Indicator lights" not in labels("peek")                     # a one-row copy of this view is a filter, not a new view
+    assert "Indicator lights" in [c.label for c in registry.get("open_as_view").children(target, None)]

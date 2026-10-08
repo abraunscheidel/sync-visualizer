@@ -100,7 +100,7 @@ class TimeWindowView(View):
         # there is nothing to act on, a click seeks. The click is in this view's time; the playhead is `lag` later.
         pos = self.plot.mapTo(self, self.plot.mapFromScene(event.scenePos()))
         target = self.target_at(pos)
-        if target is not None and self.context.actions.trigger("double_click" if event.double() else "click", target, self):
+        if target is not None and self.context.commands.trigger("double_click" if event.double() else "click", target, self):
             return
         self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()) + self.lag)
 

@@ -2262,7 +2262,7 @@ segment**, because with filters active it is unclear what to include from other 
   the workspace (see docs/checklists.md), with defaults from project config. This replaces the earlier parked idea of a
   separate hover-stats feature.
 
-**Actions.** Everything a user can do with a target is a named action registered for a kind of target: select, seek to this
+**Actions (now called commands, see 28.9).** Everything a user can do with a target is a named action registered for a kind of target: select, seek to this
 time, open as view, show details, filter to windows around this event (16.2), copy value, and so on. Views, sources and
 plugins can add actions. Actions live in their own registry and do not depend on any menu: the context menu is only one way to trigger them, alongside
 click bindings, keyboard shortcuts, toolbar buttons and anything added later. View-specific actions (jump, clip, event
@@ -2315,3 +2315,87 @@ same display. Anything that shows a date to a person should go through `DateForm
 
 **Order of building.** (1) target and details contract, with hover on the existing views; (2) selection and the detail panel;
 (3) actions and the context menu; (4) selection-bound and temporary views.
+
+### 28.9 Commands, filters, groups, sources: decisions
+
+Decided in discussion. Items marked *built* are in the code; the rest is planned and listed in order at the end.
+
+**Words.** Four different things, kept apart:
+
+* A **bus message** (`Seek`, `SetPlaying`, `SelectSegment`; called "actions" in sections 23 and 24) is a plain data record
+  saying "change shared state this way". This is how state changes.
+* A **command** (*built*, `syncviz_app/commands.py`; it was called a target action in 28.7) is a named, discoverable
+  operation on a target: select, go to this time, open as view, copy details. It adds a label, a rule for when it applies and
+  an id, so a menu can list it, a click or key can be bound to it, a project can switch it on or off, and a plugin can add one.
+  Running one usually publishes bus messages or opens a view. It exists because methods cannot be enumerated with their
+  applicability, and because a compound command (several state changes) can later be one undo step. It has `run` and `applies`
+  only; lifecycle hooks and undo are added when something needs them.
+* A **processor** is data in, data out: it takes resources and parameters and returns a new resource (population rate,
+  epochs, per-epoch measures, sync check verdicts). It changes nothing else, so it can be cached and run twice. A command may
+  *ask for* a processor's result (open the rate of this unit), but never is one.
+* A **view** draws.
+
+The test: calling it twice with the same input gives the same data and changes nothing, so it is a processor. It changes what
+the application shows or does, so it is a command.
+
+**Filter or new view.** Filtering a view changes which items it shows (a view setting). Opening a view presents data in a
+different form or different data (a command). *Built:* Open as view and Show in temporary view never offer the origin's own
+kind of view for the same data; that is a filter. Which fields a view can be filtered by come from the items' own metadata
+(the source supplies the facts, the core builds the control: a dropdown for categories, a range for numbers); a plugin is only
+needed for a field that has to be computed. Commands can be switched on and off in the project (`interaction:`), each declaring
+its default; a command like "isolate one item" is off by default because selection already gives one item extra attention.
+
+**Filtering hierarchy**, outermost first. Each only narrows; reachable time is the intersection of 1 to 3.
+
+1. **Collection:** which session is open (filter by mouse, date).
+2. **Segment filter:** attribute equality on the active segmentation, including attributes derived from events. Global:
+   it limits playback and the timeline.
+3. **Window restriction:** event windows ("500 ms around every contact C0"). Global, because there is one playhead. These are
+   not a separate mechanism but a **derived segmentation**: an epoch set made by a processor from events, whose segments carry
+   the attributes of the segment they fall in (stimulus, outcome), so the filters of level 2 still apply and the navigator
+   (previous/next, hatching) works unchanged. The active segmentation is chosen by the user.
+4. **Item filter:** which rows, units or series a view shows. Local to a view. Promoting one to a global restriction is an
+   explicit command, never implicit.
+5. **Selection** is not a filter: highlight and subject.
+
+Active restrictions show as removable chips with Clear all and Back to the previous set; the current set is a working setting
+saved in the workspace.
+
+**Groups** (planned). A group is a named predicate over items: a rule ("layer = 4") or an explicit list. A saved item filter and
+a group are the same thing. A group is one selectable item with many members, so there is still one selection; it appears in
+filter dropdowns like any option, and it aggregates (the population rate over its members, surface against deep on one plot).
+Rule-based groups work across sessions; explicit lists belong to one collection, since unit ids differ between mice. Groups are
+saved at *project* level, not inside a workspace, because they are the data's vocabulary and cut across tasks; a workspace may
+say which groups are shown (default all).
+
+**Sources: file format or experiment.** The format reader (file to generic resources: NWB, video) and the experiment's
+interpretation (where trials and units are, derived facts, per-source diagnostics and details) are different things.
+Today the NWB reader is already generic and the experiment lives in the project file, but `Source` carries both kinds of hook.
+Planned: an optional **profile** beside `type:` on a source, holding the interpretation hooks (`details`, `diagnostics`, derived
+facts). Declarative config wherever possible; a shared base profile for a format's common elements (an NWB profile) that
+experiment profiles extend, using inheritance only to reuse code. Format readers stay first-party packages outside the
+dependency-free kernel, since they need pynwb and h5py.
+
+**Epochs and the next analysis steps** (planned). An epoch is a window: from an interval or from an event plus a window. Trials
+are epochs. With per-epoch measures (event present, event count, a unit's spikes in the window) as derived attributes, these all
+become the same machinery: filtering segments by event presence ("trials where whisker C0 touched"), event-centered
+exploration, search by scientific property, comparison between conditions, aggregation (a time-aligned profile around
+contacts, per group, as the main output; a per-unit mean table secondary), and a ranked list of unusual epochs (a sort on a
+measure, with the score always shown, never a black box). Derived data should record where it came from (inputs and window) so
+a point on a derived plot resolves back to times and targets. The sync diagnostics grow into a general data-health report.
+An epoch "contains" an event when it overlaps the epoch's window; the window is configurable. Event-based filters are defined
+in the project first; a command to make windows from a selected event comes second.
+
+**Planned work, in order.** Do not lose track of these.
+
+1. Epochs: derived segmentations with inherited attributes, per-epoch measures, and the chips for restrictions.
+2. Groups.
+3. Aggregation views over groups and epochs.
+4. The data-health report.
+5. **The profile layer.** After 1 to 4 and *before any new source type is added*. The checklist says so.
+
+**Later: test speed.** The full suite takes about 2.5 to 3 minutes because most tests build a whole window with real files. After the
+work above, look for cheaper sharing: build the window once per module and reset its state between tests (selection, filters,
+views added, lags), keep the generated data files at module scope, and split pure logic from window tests so more of it runs
+without Qt. Tests that change window structure (switching collections, removing views) may still need their own window, so
+sharing will not suit every test and each move must keep the tests independent of order.

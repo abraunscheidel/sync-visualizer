@@ -146,7 +146,7 @@ class IndicatorsView(View):
     def _pressed(self, point, double: bool) -> None:
         target = self.target_at(self.lamps.mapTo(self, point))
         if target is not None:
-            self.context.actions.trigger("double_click" if double else "click", target, self)
+            self.context.commands.trigger("double_click" if double else "click", target, self)
 
     def selection_changed(self) -> None:
         self.lamps.set_selected(next((i for i, row in enumerate(self.rows) if self.is_selected(row_target(row["spec"]))), None))

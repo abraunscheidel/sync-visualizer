@@ -68,3 +68,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] Run the whole suite (`.venv\Scripts\python -m pytest -q`).
 - [ ] Update `docs/design.md` for anything that changes behaviour a user or plugin author relies on.
 - [ ] Long jobs run as tracked background tasks.
+
+## Adding a source type (a new file format)
+
+- [ ] **First do the profile layer** (design doc 28.9, planned work item 5): separate the format reader from the experiment's
+  interpretation, so the new reader does not repeat the mix that `Source` has today. Do not add a source type before it.
