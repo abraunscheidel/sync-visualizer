@@ -685,6 +685,81 @@ The architecture should eventually support:
 
 All of these ultimately produce a `TimeMapping`.
 
+### 18.1 Sync signals declared on a source
+
+Some sources carry a synchronization signal that is not stored as data. A video
+may contain blackout frames or a flashing LED; the pulse times exist only in the
+pixels. The project configuration therefore lets the user **declare** a sync
+signal on a source, and the system obtains the pulse times by one of several
+paths. Users should only pay the cost of detection when nothing cheaper exists.
+
+Paths, from cheapest to most expensive:
+
+1. **Known times.** The pulse times already exist in the dataset or in a file the
+   user points to (an NWB table, a CSV). No decoding is needed.
+2. **Predicted windows.** If the other side's pulse times are known, the expected
+   times in this source can be predicted approximately, and only short windows
+   around them are decoded and refined.
+3. **Detection over the whole source.** A detector plugin scans the source
+   (for example `dark_frames`, or an LED within a declared region of the frame).
+
+Sketch (syntax not fixed):
+
+```yaml
+sources:
+  video:
+    type: video
+    path: ...
+    sync_signal:
+      kind: dark_frames        # a detector plugin; others: led_region, audio_beep, ...
+      threshold: auto          # or an explicit cutoff
+      # alternatives that skip detection:
+      # pulse_times: pulses.csv
+```
+
+Design consequences:
+
+- Detectors are plugins, registered like sources and sync methods. The core does
+  not know what a "blackout" is.
+- A detector is a Processor (§13). It takes a video and produces an event series
+  in the video's native time. A synchronization method (§18) then consumes it.
+- Detection results are cached against the source file, the detector and its
+  parameters, so a given video is analyzed at most once per configuration.
+  Detection runs in the background with progress shown.
+- Detection must be inspectable (§32): show the brightness (or equivalent) trace,
+  the threshold, and the detected pulses, and allow the threshold to be adjusted.
+- The user interface edits this configuration. The configuration remains the
+  single source of truth.
+- Expected structure (for example "about one pulse per trial") is validation,
+  not an assumption. Disagreements are reported, not silently corrected.
+
+#### Worked example: DANDI 000231 (sub-219CR, session 2019-04-04)
+
+Measured on the full video by decoding every frame and recording mean brightness.
+This is evidence from one session; the other session has not yet been scanned.
+
+- The video has 391,200 frames, exactly equal to the span of the NWB tracking
+  frame grid (frames 0 to 391,199 at 200 Hz). The video container's own timing
+  is unusable (it reports 30 fps and a duration of 13,040 s), so frames must be
+  addressed by index, not container time.
+- Brightness is clearly bimodal. 230 runs of dark frames were found, each
+  27 or 28 frames long (about 135 ms).
+- Every dark frame lies inside a gap in the NWB whisker tracking, consistent with
+  tracking being unable to run on black frames. Not every tracking gap is dark:
+  about 4% of the missing frames are short gaps (around 5 frames) of another cause.
+- 228 of the 230 dark runs begin within 2 frames of a trial start, and 97.8% begin
+  exactly on it. Every one of the 228 trials has a matching dark run. Two dark
+  runs (at about 1614.0 s and 1944.5 s) are not at a trial start and are
+  unexplained.
+
+This is consistent with the blackout being a per-trial marker, and with the NWB
+trial times and the video sharing one clock. It is not independent proof of
+alignment: if the dataset authors derived the trial times from these same
+blackouts, agreement shows the correction was applied, not that it was correct.
+Also, here the blackout coincides with the trial start rather than carrying
+extra timing information; a dataset with a separate neural recording would
+supply a second pulse train to match against.
+
 ---
 
 ## 19. Time Mapping
