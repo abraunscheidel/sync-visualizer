@@ -13,6 +13,7 @@ syncviz = "syncviz_app.main:main"
 [project.entry-points."syncviz.views"]
 timeseries = "syncviz_app.views.timeseries:TimeSeriesView"
 tracks = "syncviz_app.views.tracks:TracksView"
+indicators = "syncviz_app.views.indicators:IndicatorsView"
 
 [build-system]
 requires = ["hatchling"]

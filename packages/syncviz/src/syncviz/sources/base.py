@@ -24,12 +24,14 @@ class DataEntry:
     """One thing a source can provide, as offered to the user when choosing what to show.
 
     `kind` is a generic resource kind ("timeseries", "events", "intervals") or "video";
-    `members` names the parts of a container (several series stored together).
+    `members` names the parts of a container (several series stored together), in the order the source
+    thinks natural (for neurons, by depth).
     """
 
     path: str
     kind: str
     members: tuple[str, ...] = field(default_factory=tuple)
+    labels: dict[str, str] = field(default_factory=dict)   # display name of a member, where it has a better one
 
 
 class Source(ABC):

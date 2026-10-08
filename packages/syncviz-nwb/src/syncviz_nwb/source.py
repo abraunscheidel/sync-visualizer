@@ -52,6 +52,8 @@ class NWBSource(Source):
             for module_name, module in nwb.processing.items():
                 names += [f"processing/{module_name}/{name}" for name in module.data_interfaces]
             names += [f"intervals/{name}" for name in nwb.intervals]
+            if nwb.units is not None:
+                names.append("units")
             return names
 
     def catalog(self) -> list[DataEntry]:
@@ -70,6 +72,8 @@ class NWBSource(Source):
             for module_name, module in nwb.processing.items():
                 objects += [(f"processing/{module_name}/{n}", o) for n, o in module.data_interfaces.items()]
             objects += [(f"intervals/{n}", o) for n, o in nwb.intervals.items()]
+            if nwb.units is not None and len(nwb.units) > 0:
+                entries.append(self._units_entry(nwb.units))
             for path, obj in objects:
                 if isinstance(obj, TimeIntervals):
                     entries.append(DataEntry(path, "intervals"))
@@ -83,9 +87,24 @@ class NWBSource(Source):
         return entries
 
     @staticmethod
+    def _units_entry(units) -> DataEntry:
+        """The units as one container of event series, shallowest first when depths are known."""
+        ids = [str(i) for i in units.id[:]]
+        order = list(np.argsort(units["depth"][:], kind="stable")) if "depth" in units.colnames else range(len(ids))
+        layers = units["layer"][:] if "layer" in units.colnames else None
+        labels = {}
+        for i in order:
+            labels[ids[i]] = f"Unit {ids[i]}" + (f" · L{layers[i]}" if layers is not None else "")
+        return DataEntry("units", "events", tuple(ids[i] for i in order), labels)
+
+    @staticmethod
     def _resolve(nwb, path: str) -> Any:
         head, *rest = path.split("/")
         try:
+            if head == "units":
+                if nwb.units is None:
+                    raise MissingDataError("this file has no units table")
+                return nwb.units
             if head == "acquisition":
                 return nwb.acquisition[rest[0]]
             if head == "processing":
@@ -124,11 +143,30 @@ class NWBSource(Source):
         """A BehavioralEvents container (or single series) as EventSeries by name."""
         with self._open() as io:
             obj = self._resolve(io.read(), path)
+            if path == "units":
+                return self._unit_spikes(obj)
             series = obj.time_series if hasattr(obj, "time_series") else {obj.name: obj}
             return {
                 name: EventSeries(times=np.asarray(ts.timestamps[:], dtype=float), name=f"{path}/{name}")
                 for name, ts in series.items()
             }
+
+    @staticmethod
+    def _unit_spikes(units) -> dict[str, EventSeries]:
+        """The spike times of each sorted unit, named by the unit's id. The unit's other columns
+        (depth, layer, ...) travel with it as metadata."""
+        columns = [c for c in units.colnames if c not in ("spike_times", "obs_intervals")]
+        out = {}
+        for i, unit_id in enumerate(units.id[:]):
+            metadata = {}
+            for column in columns:
+                value = units[column][i]
+                metadata[column] = value.item() if hasattr(value, "item") else value
+            out[str(unit_id)] = EventSeries(
+                times=np.sort(np.asarray(units.get_unit_spike_times(i), dtype=float)),
+                name=f"units/{unit_id}", metadata=metadata,
+            )
+        return out
 
     def read_timeseries(self, path: str, only: Iterable[str] | None = None) -> dict[str, TimeSeries]:
         """A container of time series (or a single one) as TimeSeries by name.
