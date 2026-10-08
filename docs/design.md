@@ -2264,9 +2264,16 @@ segment**, because with filters active it is unclear what to include from other 
 
 **Actions.** Everything a user can do with a target is a named action registered for a kind of target: select, seek to this
 time, open as view, show details, filter to windows around this event (16.2), copy value, and so on. Views, sources and
-plugins can add actions. Right-click opens a menu of the actions that apply to the target; the menu shows shortcuts.
+plugins can add actions. Actions live in their own registry and do not depend on any menu: the context menu is only one way to trigger them, alongside
+click bindings, keyboard shortcuts, toolbar buttons and anything added later. View-specific actions (jump, clip, event
+filters) are registered by the view or plugin that owns them. Right-click opens a menu of the actions that apply to the
+target; the menu shows shortcuts. "Open as view" is a submenu listing every way the target can be visualized, built from
+the view types that accept it.
 Left click runs the primary action and double click a second one, both set in project config, so the app stays agnostic.
-The standard default for left click is select, plus seek when the target has a time. Applicability is declared by the
+Select means marking one item (a unit, a row, a curve) as the shared current selection: highlighted wherever it appears,
+shown in the detail panel, followed by selection-bound views; it never moves time or playback by itself. The proposed default
+for left click: a target with a specific time (a spike, a badge, a trace point) is selected and sought to; a target without
+one (a whole row or unit) is only selected. Seeking can also be triggered separately. Still to confirm with the user. Applicability is declared by the
 action, never hardcoded in the core. The ideas in 16.2 become ordinary actions rather than a feature of their own.
 
 **Rules.**
