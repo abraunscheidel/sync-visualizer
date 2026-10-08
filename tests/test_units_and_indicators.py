@@ -163,15 +163,35 @@ def test_the_decay_and_the_columns_come_from_the_spec(window):
         IndicatorsView(window.context, {"type": "indicators", "decay": 0, "rows": []})
 
 
-def test_with_no_column_count_the_lamps_flow_into_more_columns_when_the_panel_is_short(window):
+def test_the_tiles_together_fill_the_whole_panel(window):
     view = _add_units(window)
     lamps = view.lamps
+    for width, height in [(400, 300), (900, 120), (160, 700)]:
+        lamps.resize(width, height)
+        rects = lamps.tile_rects()
+        assert len(rects) == 3
+        assert min(r.left() for r in rects) == pytest.approx(2) and min(r.top() for r in rects) == pytest.approx(2)
+        columns, rows = lamps.grid(width, height)
+        assert columns * rows >= 3
+        assert max(r.right() for r in rects) > width * (columns - 1) / columns            # the last column reaches the edge
+        assert all(r.width() > 20 and r.height() > 20 for r in rects)
+
+
+def test_the_grid_suits_the_shape_of_the_panel_unless_the_project_fixes_it(window):
+    lamps = _add_units(window).lamps
     assert lamps.columns is None
-    assert lamps.effective_columns(width=400, height=400) == 1             # 3 lamps fit comfortably in one column
-    assert lamps.effective_columns(width=400, height=40) == 2             # too short: split
-    assert lamps.effective_columns(width=150, height=40) == 1             # too narrow to split
-    forced = _add_units(window, columns=3)
-    assert forced.lamps.effective_columns(width=400, height=400) == 3      # the project's choice wins
+    assert lamps.grid(150, 700)[0] == 1                       # tall and narrow: a single column
+    assert lamps.grid(900, 100)[0] == 3                       # wide and short: side by side
+    forced = _add_units(window, columns=2).lamps
+    assert forced.grid(900, 100) == (2, 2)                    # the project's choice wins
+
+
+def test_many_tiles_get_a_balanced_grid(window):
+    from syncviz_app.views.indicators import _Lamps
+
+    lamps = _Lamps([f"Unit {i}" for i in range(13)])
+    columns, rows = lamps.grid(1000, 400)
+    assert columns * rows >= 13 and columns > 1 and rows > 1 and columns * rows - 13 < columns
 
 
 def test_the_lamps_really_draw_brighter_when_lit(window, qapp):

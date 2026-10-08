@@ -1,4 +1,4 @@
-"""Indicator lights: one lamp per row that lights when its event happens at the playhead.
+"""Indicator lights: one tile per row, filling the panel, that lights when its event happens at the playhead.
 
 No time axis: the shared playhead is the time. Each lamp's brightness depends only on how long ago
 its event was (an event fades over `decay` seconds of recording time; an interval stays lit while
@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz_app.views.base import View
@@ -21,30 +21,46 @@ from syncviz_app.views.rows import (
 )
 
 DEFAULT_DECAY_S = 0.15
-MIN_CELL_H, MAX_CELL_H = 6, 28
-COMFORTABLE_CELL_H = 18          # with `columns` unset, lamps flow into more columns rather than get squeezed below this
-MIN_COLUMN_W = 150
+GAP = 4                          # pixels between tiles
+TARGET_ASPECT = 1.8              # tiles are a little wider than tall, which suits a label
+UNLIT_ALPHA, LIT_ALPHA = 30, 255
 
 
 class _Lamps(QWidget):
-    """Draws the lamps and their labels, in `columns` columns filled top to bottom."""
+    """Tiles that together fill the panel, one per row, lit by brightness 0..1. The label sits inside
+    the tile. The grid is chosen to give the biggest, most even tiles, unless `columns` fixes it."""
 
     def __init__(self, labels: list[str], columns: int | None = None) -> None:
         super().__init__()
         self.labels = labels
-        self.columns = None if columns is None else max(int(columns), 1)     # None: as many as the panel's height calls for
+        self.columns = None if columns is None else max(int(columns), 1)     # None: pick the best fit
         self.levels = np.zeros(len(labels))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(120, 60)
 
-    def effective_columns(self, width: float, height: float) -> int:
-        """The fixed number of columns if the project gave one, else enough that lamps keep a
-        comfortable height, as far as the width allows."""
-        if self.columns is not None:
-            return self.columns
+    def grid(self, width: float, height: float) -> tuple[int, int]:
+        """(columns, rows): the fixed columns if the project gave them, else the arrangement whose tiles
+        are closest to the target shape without leaving many empty."""
         n = len(self.labels)
-        wanted = math.ceil(n * COMFORTABLE_CELL_H / max(height, 1))
-        return max(1, min(wanted, n, int(width // MIN_COLUMN_W) or 1))
+        if self.columns is not None:
+            return self.columns, max(math.ceil(n / self.columns), 1)
+        best, best_cost = (1, max(n, 1)), math.inf
+        for columns in range(1, max(n, 1) + 1):
+            rows = math.ceil(n / columns)
+            tile_w, tile_h = width / columns, height / rows
+            if tile_w <= 0 or tile_h <= 0:
+                continue
+            cost = abs(math.log((tile_w / tile_h) / TARGET_ASPECT)) + 0.5 * (columns * rows - n) / max(n, 1)
+            if cost < best_cost:
+                best, best_cost = (columns, rows), cost
+        return best
+
+    def tile_rects(self) -> list[QRectF]:
+        """Where each tile is drawn: together they fill the whole widget."""
+        columns, rows = self.grid(self.width(), self.height())
+        w, h = self.width() / columns, self.height() / rows
+        return [QRectF((i // rows) * w, (i % rows) * h, w, h).adjusted(GAP / 2, GAP / 2, -GAP / 2, -GAP / 2)
+                for i in range(len(self.labels))]
 
     def set_levels(self, levels: np.ndarray) -> None:
         if not np.array_equal(levels, self.levels):
@@ -55,30 +71,30 @@ class _Lamps(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         pal = self.palette()
-        text, lit = pal.color(pal.ColorRole.WindowText), pal.color(pal.ColorRole.Highlight)
-        n = len(self.labels)
-        if n == 0:
-            return
-        columns = self.effective_columns(self.width(), self.height())
-        per_column = math.ceil(n / columns)
-        cell_w = self.width() / columns
-        cell_h = min(max(self.height() / per_column, MIN_CELL_H), MAX_CELL_H)
-        size = max(cell_h - 6, 6)
-        font = p.font()
-        font.setPixelSize(int(min(max(cell_h * 0.55, 9), 15)))
-        p.setFont(font)
-        for i, (label, level) in enumerate(zip(self.labels, self.levels)):
-            column, row = divmod(i, per_column)
-            x, y = column * cell_w + 8, row * cell_h + (cell_h - size) / 2
-            lamp = QRectF(x, y, size, size)
+        dark, bright = pal.color(pal.ColorRole.WindowText), pal.color(pal.ColorRole.HighlightedText)
+        lit = pal.color(pal.ColorRole.Highlight)
+        for rect, label, level in zip(self.tile_rects(), self.labels, self.levels):
+            level = float(level)
             fill = QColor(lit)
-            fill.setAlpha(int(28 + 227 * float(level)))        # never fully off, so the lamps stay visible
-            p.setPen(QPen(text if level > 0.5 else QColor(text.red(), text.green(), text.blue(), 90), 1))
+            fill.setAlpha(int(UNLIT_ALPHA + (LIT_ALPHA - UNLIT_ALPHA) * level))
+            outline = QColor(dark)
+            outline.setAlpha(70)
+            p.setPen(QPen(outline, 1))
             p.setBrush(fill)
-            p.drawRoundedRect(lamp, 3, 3)
-            p.setPen(text)
-            p.drawText(QRectF(x + size + 8, row * cell_h, cell_w - size - 20, cell_h),
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
+            p.drawRoundedRect(rect, 6, 6)
+            # The label turns from the normal text colour to the highlighted-text colour as the tile lights.
+            p.setPen(QColor(int(dark.red() + (bright.red() - dark.red()) * level),
+                            int(dark.green() + (bright.green() - dark.green()) * level),
+                            int(dark.blue() + (bright.blue() - dark.blue()) * level)))
+            font = p.font()
+            font.setBold(level > 0.5)
+            font.setPixelSize(int(min(max(rect.height() * 0.3, 9), 24)))
+            p.setFont(font)
+            while font.pixelSize() > 9 and QFontMetrics(font).horizontalAdvance(label) > rect.width() - 10:
+                font.setPixelSize(font.pixelSize() - 1)
+                p.setFont(font)
+            text = QFontMetrics(font).elidedText(label, Qt.TextElideMode.ElideRight, int(rect.width() - 10))
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
 class IndicatorsView(View):

@@ -2039,11 +2039,11 @@ source reads its `units` table as a container of event series named by unit id, 
 shallowest first, labelled "Unit 7 · L4". A unit is not a channel: the file has 63 channels and 13 units, and channels
 can hold several units or none. Spikes carry no amplitude here, so a spike is binary.
 
-The **indicators** view shows rows as lamps, without a time axis: the playhead is the time. An event's lamp is fully lit
+The **indicators** view shows rows as tiles that together fill the panel (as large as the panel allows, so flashes are easy to see), without a time axis: the playhead is the time. An event's lamp is fully lit
 at the event and fades linearly over `decay` seconds of recording time (default 0.15 s); an interval's lamp is lit
 while the playhead is inside it, then fades. Brightness depends only on the playhead, so pausing, scrubbing and
 stepping are correct and a spike between two redraws still glows. One neutral colour (colour would imply a different
-measurement); the label is the unit's name. `columns` fixes the column count; by default lamps flow into more columns when
-the panel is short. Rows use the same specification as the event tracks, which remain the way to see spike timing
+measurement); the label is the unit's name. `columns` fixes the column count; by default the grid is chosen to give the biggest, most even tiles for the
+panel's shape, with the label inside each tile. Rows use the same specification as the event tracks, which remain the way to see spike timing
 over seconds, and both views offer the same rows in the Add view dialog. Not built: a rate mode (spikes in a
 trailing window), trial-aligned rasters, and a firing-rate heat map.
