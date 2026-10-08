@@ -528,7 +528,7 @@ def test_the_views_menu_is_gone_because_the_sidebar_replaces_it(window):
     assert "Views" not in [a.text().replace("&", "") for a in window.menuBar().actions()]
 
 
-# -- layouts: named presets, one file each in the project's own folder, saved only on request ----
+# -- workspaces: named presets, one file each in the project's own folder, saved only on request ----
 def _reopen(window, qapp, **kwargs):
     """Close the window and open the same project again."""
     path = window.project.path
@@ -550,7 +550,7 @@ def test_nothing_is_saved_unless_the_user_saves(window, qapp):
     window.remove_view(window.views[0])
     again = _reopen(window, qapp)               # closing must not have saved anything
     try:
-        assert len(again.views) == 3 and not again.layout_dir.exists()
+        assert len(again.views) == 3 and not again.workspace_dir.exists()
     finally:
         again.close()
 
@@ -562,7 +562,7 @@ def test_saving_keeps_added_and_removed_views_and_hidden_panels(window, qapp):
     window.docks[0].close()
     _pump(qapp, seconds=0.1)
     window.views_panel.save_button.click()
-    assert "Saved layout" in window.statusBar().currentMessage()
+    assert "Saved workspace" in window.statusBar().currentMessage()
     again = _reopen(window, qapp)
     try:
         _pump(qapp, seconds=0.1)
@@ -575,77 +575,77 @@ def test_saving_keeps_added_and_removed_views_and_hidden_panels(window, qapp):
 
 
 def test_each_layout_is_its_own_file_in_the_projects_own_folder(window):
-    window.save_layout_as("Overview")
-    window.save_layout_as("Whisker analysis")
-    folder = window.layout_dir
+    window.save_workspace_as("Overview")
+    window.save_workspace_as("Whisker analysis")
+    folder = window.workspace_dir
     assert folder.parent == window.project.path.parent
     assert sorted(p.name for p in folder.glob("*.json")) == ["Overview.json", "Whisker analysis.json"]
-    assert window.saved_layout_names() == ["Overview", "Whisker analysis"]
+    assert window.saved_workspace_names() == ["Overview", "Whisker analysis"]
 
 
 def test_two_projects_never_share_layout_files(tmp_path):
-    from syncviz_app.layout import layouts_dir
+    from syncviz_app.workspace import workspaces_dir
 
-    assert layouts_dir(tmp_path / "a" / "project.yaml") != layouts_dir(tmp_path / "b" / "project.yaml")
-    assert layouts_dir(tmp_path / "a" / "project.yaml", "mine") == tmp_path / "a" / "mine"
+    assert workspaces_dir(tmp_path / "a" / "project.yaml") != workspaces_dir(tmp_path / "b" / "project.yaml")
+    assert workspaces_dir(tmp_path / "a" / "project.yaml", "mine") == tmp_path / "a" / "mine"
 
 
 def test_switching_layouts_changes_the_views_and_drops_unsaved_changes(window):
     full = len(window.views)
-    window.save_layout_as("Full")                          # saved with every view
+    window.save_workspace_as("Full")                          # saved with every view
     window.remove_view(next(v for v in window.views if v.type_name == "video"))
-    window.save_layout_as("Overview")                      # saved without the video
-    assert window.layout_name == "Overview" and len(window.views) == full - 1
-    assert window.switch_layout("Full") and len(window.views) == full
+    window.save_workspace_as("Overview")                      # saved without the video
+    assert window.workspace_name == "Overview" and len(window.views) == full - 1
+    assert window.switch_workspace("Full") and len(window.views) == full
     window.add_view(_a_time_series_spec(window))           # not saved...
     assert len(window.views) == full + 1
-    window.switch_layout("Overview")
-    window.switch_layout("Full")
+    window.switch_workspace("Overview")
+    window.switch_workspace("Full")
     assert len(window.views) == full                       # ...so it is gone
 
 
-def test_a_layout_is_chosen_by_the_command_line_then_the_project_file_then_default(window, qapp):
-    window.save_layout_as("Overview")
+def test_a_workspace_is_chosen_by_the_command_line_then_the_project_file_then_default(window, qapp):
+    window.save_workspace_as("Overview")
     window.remove_view(window.views[0])
-    window.save_layout_clicked()
+    window.save_workspace_clicked()
     path = window.project.path
     window.close()
-    chosen = build_window(path, layout_name="Overview")
+    chosen = build_window(path, workspace_name="Overview")
     try:
-        assert chosen.layout_name == "Overview" and len(chosen.views) == 2
+        assert chosen.workspace_name == "Overview" and len(chosen.views) == 2
     finally:
         chosen.close()
     plain = build_window(path)                              # no name: Default, which was never saved
     try:
-        assert plain.layout_name == "Default" and len(plain.views) == 3
+        assert plain.workspace_name == "Default" and len(plain.views) == 3
     finally:
         plain.close()
-    missing = build_window(path, layout_name="Nope")
+    missing = build_window(path, workspace_name="Nope")
     try:
         assert len(missing.views) == 3 and any("'Nope'" in n for n in missing.context.notes)
     finally:
         missing.close()
-    path.write_text(path.read_text(encoding="utf-8") + "\nlayout: Overview\n", encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8") + "\nworkspace: Overview\n", encoding="utf-8")
     from_project = build_window(path)
     try:
-        assert from_project.layout_name == "Overview" and len(from_project.views) == 2
+        assert from_project.workspace_name == "Overview" and len(from_project.views) == 2
     finally:
         from_project.close()
 
 
 def test_deleting_a_layout_removes_its_file_only(window):
-    window.save_layout_as("A")
-    window.save_layout_as("B")
-    assert window.delete_layout("A")
-    assert window.saved_layout_names() == ["B"]
-    assert not window.delete_layout("A")
+    window.save_workspace_as("A")
+    window.save_workspace_as("B")
+    assert window.delete_workspace("A")
+    assert window.saved_workspace_names() == ["B"]
+    assert not window.delete_workspace("A")
 
 
 def test_a_corrupt_layout_file_is_ignored(window, qapp):
-    window.save_layout_as("Broken")
-    (window.layout_dir / "Broken.json").write_text("{not json", encoding="utf-8")
-    assert window.saved_layout_names() == []
-    again = _reopen(window, qapp, layout_name="Broken")
+    window.save_workspace_as("Broken")
+    (window.workspace_dir / "Broken.json").write_text("{not json", encoding="utf-8")
+    assert window.saved_workspace_names() == []
+    again = _reopen(window, qapp, workspace_name="Broken")
     try:
         assert len(again.views) == 3
     finally:
@@ -654,18 +654,76 @@ def test_a_corrupt_layout_file_is_ignored(window, qapp):
 
 def test_reset_shows_the_project_defaults_without_saving(window):
     window.remove_view(window.views[0])
-    window.reset_layout()
-    assert len(window.views) == 3 and not window.layout_dir.exists()
+    window.reset_workspace()
+    assert len(window.views) == 3 and not window.workspace_dir.exists()
 
 
 def test_screenshot_mode_neither_reads_nor_writes_layouts(window, qapp):
     path = window.project.path
-    window.save_layout_as("Keep")
+    window.save_workspace_as("Keep")
     window.close()
-    plain = build_window(path, use_layout=False)
+    plain = build_window(path, use_workspace=False)
     try:
-        assert plain.layout_dir is None
-        plain.save_layout_clicked()
+        assert plain.workspace_dir is None
+        plain.save_workspace_clicked()
     finally:
         plain.close()
-    assert sorted(p.name for p in (path.parent / "layouts").glob("*.json")) == ["Keep.json"]
+    assert sorted(p.name for p in (path.parent / "workspaces").glob("*.json")) == ["Keep.json"]
+
+
+# -- a workspace holds the working settings too ----------------------------------------------
+def _set_working_state(window):
+    box = window.filter_bar._filters["stimulus"]
+    box.setCurrentIndex(1)                                  # first real value
+    window.filter_bar.skip.setChecked(False)
+    window.navigation.speed.setCurrentIndex(window.navigation.speed.findData(0.5))
+    window.navigation.count.setValue(7)
+    window.context.bus.publish(Seek(2.5))
+    return box.currentData()
+
+
+def test_a_saved_workspace_restores_filters_speed_frame_step_and_playhead(window, qapp):
+    value = _set_working_state(window)
+    window.save_workspace_clicked()
+    again = _reopen(window, qapp, workspace_name="Default")
+    try:
+        assert again.filter_bar._filters["stimulus"].currentData() == value
+        assert again.context.navigator.filtered and again.context.navigator.skip_hidden is False
+        assert again.context.timeline.rate == 0.5
+        assert again.context.stepper.count == 7
+        assert abs(again.context.timeline.time - 2.5) < 1e-6
+        assert not again.context.timeline.playing
+    finally:
+        again.close()
+
+
+def test_switching_workspaces_switches_the_settings_with_them(window):
+    window.save_workspace_as("Plain")                       # defaults
+    _set_working_state(window)
+    window.save_workspace_as("Tuned")
+    window.switch_workspace("Plain")
+    assert not window.context.navigator.filtered and window.context.navigator.skip_hidden
+    assert window.context.timeline.rate == 1.0 and window.context.stepper.count == 1
+    window.switch_workspace("Tuned")
+    assert window.context.navigator.filtered and window.context.stepper.count == 7
+
+
+def test_reset_returns_the_settings_to_the_project_defaults(window):
+    _set_working_state(window)
+    window.reset_workspace()
+    assert not window.context.navigator.filtered and window.context.navigator.skip_hidden
+    assert window.context.timeline.rate == 1.0 and window.context.stepper.count == 1
+
+
+def test_a_saved_value_that_no_longer_exists_is_ignored(window):
+    window.filter_bar.apply_state({"filters": {"stimulus": "no such value"}, "skip": True})
+    assert not window.context.navigator.filtered
+
+
+def test_the_saved_workspace_file_is_plain_readable_data(window):
+    import json
+
+    _set_working_state(window)
+    path = window.save_workspace_clicked() or next(window.workspace_dir.glob("*.json"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["settings"]["navigation"]["frames"] == 7 and data["settings"]["filters"]["skip"] is False

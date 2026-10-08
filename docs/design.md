@@ -1965,18 +1965,21 @@ update colours, extents, the timeline's range, the frame-definition choices and 
 (`view_factory.py`). Views added in the UI last for the session; they are not written back to the project
 file yet.
 
-### 28.3 Saved layouts
+### 28.3 Workspaces
 
-The project file is the author's description of the data and is never rewritten. What the user arranges is a
-**layout**: the views added, the project views removed, and Qt's saved geometry and panel/toolbar/sidebar
-positions (including which panels are hidden). Each layout is its own file, `<name>.json`, in the project's own
-`layouts` folder (next to the project file; `layouts_dir:` in the project file moves it), so projects never
-share files and a project can hold several presets (the folder is git-ignored). Which one opens first is the
-project file's `layout: <name>`, overridden by `--layout NAME`; otherwise "Default", and if that has not been saved
-the project's own views are shown.
+The project file is the author's description of the data and is never rewritten. What the user arranges and
+sets up while working is a **workspace**: the views added and the project views removed; Qt's saved geometry and
+panel/toolbar/sidebar positions (including which panels are hidden); and the working settings, which are the
+filters and whether movement skips what they hide, the playback speed, what defines a frame and how many each step
+moves, and the playhead position (never whether it is playing). Each workspace is its own file, `<name>.json`, in the
+project's own `workspaces` folder (next to the project file; `workspaces_dir:` in the project file moves it), so
+projects never share files and one project can hold several presets (the folder is git-ignored). Which opens first
+is the project file's `workspace: <name>`, overridden by `--workspace NAME`; otherwise "Default", and if that has
+not been saved the project's own views and default settings are shown.
 
-**Nothing is written unless the user saves.** *Save layout* (Ctrl+S, also a button under the views list) writes the
-layout in use; closing never saves, and switching to another layout drops unsaved changes to the one left. The Layout
-menu lists the saved layouts (the one in use is ticked and named in the window title) with *Save layout as…*,
-*Delete layout* and *Reset to the project's defaults* (which changes only what is on screen). A layout that is missing
-or unreadable is ignored, and `--screenshot` mode uses none.
+**Nothing is written unless the user saves.** *Save workspace* (Ctrl+S, also a button under the views list) writes
+the workspace in use; closing never saves, and switching to another workspace drops unsaved changes to the one left.
+The Workspace menu lists the saved ones (the one in use is ticked and named in the window title) with *Save
+workspace as…*, *Delete workspace* and *Reset to the project's defaults* (which changes only what is on screen).
+A workspace that is missing or unreadable is ignored, saved values that no longer exist (a filter option, a frame
+definition) are skipped, and `--screenshot` mode uses none.

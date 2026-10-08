@@ -17,7 +17,8 @@ from syncviz_app.context import AppContext
 from syncviz_app.debug import DebugTools
 from syncviz_app.controls import FilterBar, NavigationBar
 from syncviz_app.info_panel import InfoPanel
-from syncviz_app.layout import DEFAULT_NAME, Layout, delete_layout, list_layouts, load_layout, save_layout
+from syncviz.core import Seek
+from syncviz_app.workspace import DEFAULT_NAME, Workspace, delete_workspace, list_workspaces, load_workspace, save_workspace
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
 from syncviz_app.stall import StallGuard
@@ -31,11 +32,11 @@ PLAYBACK_TICK_MS = 16           # the playhead advances by elapsed wall time, so
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project, context: AppContext, views: list[View], debug: bool = False,
-                 layout: Layout | None = None, layout_dir=None, layout_name: str = DEFAULT_NAME) -> None:
+                 workspace: Workspace | None = None, workspace_dir=None, workspace_name: str = DEFAULT_NAME) -> None:
         super().__init__()
-        self.layout_dir = layout_dir                        # this project's layouts folder; None = layouts are off
-        self.layout_name = layout_name                      # the layout in use (it may not be saved yet)
-        saved = layout or Layout()
+        self.workspace_dir = workspace_dir                        # this project's workspaces folder; None = workspaces are off
+        self.workspace_name = workspace_name                      # the workspace in use (it may not be saved yet)
+        saved = workspace or Workspace()
         self._added: dict[str, dict] = {s.get("title") or s["type"]: s for s in saved.added}
         self._removed: list[str] = list(saved.removed)
         self.project, self.context, self.views = project, context, views
@@ -85,9 +86,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.timeline_bar)
         self.setCentralWidget(central)
 
-        self.layout_menu = self.menuBar().addMenu("&Layout")
-        self.layout_menu.aboutToShow.connect(self._fill_layout_menu)
-        self._fill_layout_menu()
+        self.workspace_menu = self.menuBar().addMenu("&Workspace")
+        self.workspace_menu.aboutToShow.connect(self._fill_workspace_menu)
+        self._fill_workspace_menu()
 
         self.views_panel = ViewsPanel(self)
         sidebar.addWidget(self.views_panel)
@@ -105,8 +106,8 @@ class MainWindow(QMainWindow):
         self._pump_timer.timeout.connect(self._pump)
         self._pump_timer.start(int(PUMP_INTERVAL_S * 1000))
 
-        if layout_dir is not None:
-            self._restore_layout(saved)
+        if workspace_dir is not None:
+            self._restore_workspace(saved)
         else:
             QTimer.singleShot(0, self._apply_initial_sizes)
 
@@ -117,8 +118,8 @@ class MainWindow(QMainWindow):
         self._play_timer.timeout.connect(self._tick)
         self._play_timer.start(PLAYBACK_TICK_MS)
 
-    # -- layouts -----------------------------------------------------------------------------
-    def _restore_layout(self, saved: Layout, geometry: bool = True) -> None:
+    # -- workspaces -----------------------------------------------------------------------------
+    def _restore_workspace(self, saved: Workspace, geometry: bool = True) -> None:
         """Apply saved panel positions (after every panel exists), and the window's size if `geometry`."""
         def decode(text):
             return QByteArray.fromBase64(text.encode("ascii"))
@@ -132,43 +133,59 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._apply_initial_sizes)
         if self.views_panel is not None:
             self.views_panel.sync()
+        self._apply_settings(saved.settings)
 
-    def current_layout(self) -> Layout:
+    def settings(self) -> dict:
+        """The working state apart from the arrangement: filters, frame step, speed, playhead position."""
+        out = {"navigation": self.navigation.state(), "time": self.context.timeline.time}
+        if self.filter_bar is not None:
+            out["filters"] = self.filter_bar.state()
+        return out
+
+    def _apply_settings(self, settings: dict) -> None:
+        self.navigation.apply_state(settings.get("navigation", {}))
+        if self.filter_bar is not None:
+            self.filter_bar.apply_state(settings.get("filters", {}))
+        if "time" in settings:                             # after the filters, which may have moved the playhead
+            self.context.bus.publish(Seek(float(settings["time"])))
+
+    def current_workspace(self) -> Workspace:
         def encode(data):
             return bytes(data.toBase64()).decode("ascii")
 
-        return Layout(
+        return Workspace(
             added=[dict(s) for s in self._added.values()],
             removed=list(self._removed),
             window=encode(self.saveGeometry()),
             main_state=encode(self.saveState()),
             views_state=encode(self.view_host.saveState()),
+            settings=self.settings(),
         )
 
     def _set_title(self) -> None:
-        suffix = f" — layout {self.layout_name}" if self.layout_dir is not None else ""
+        suffix = f" — workspace {self.workspace_name}" if self.workspace_dir is not None else ""
         self.setWindowTitle(f"Sync Visualizer — {self.project.name}{suffix}")
 
-    def saved_layout_names(self) -> list[str]:
-        return list_layouts(self.layout_dir) if self.layout_dir is not None else []
+    def saved_workspace_names(self) -> list[str]:
+        return list_workspaces(self.workspace_dir) if self.workspace_dir is not None else []
 
-    def save_layout_clicked(self) -> None:
+    def save_workspace_clicked(self) -> None:
         """Write the arrangement in use to its file. Nothing is saved unless this is asked for."""
-        if self.layout_dir is None:
-            self.statusBar().showMessage("Layouts are not kept in this mode", 4000)
+        if self.workspace_dir is None:
+            self.statusBar().showMessage("Workspaces are not kept in this mode", 4000)
             return
         try:
-            save_layout(self.layout_dir, self.layout_name, self.current_layout())
+            save_workspace(self.workspace_dir, self.workspace_name, self.current_workspace())
         except OSError as exc:
-            self.context.notes.append(f"layout not saved: {exc}")
-            self.statusBar().showMessage(f"Could not save layout: {exc}", 8000)
+            self.context.notes.append(f"workspace not saved: {exc}")
+            self.statusBar().showMessage(f"Could not save workspace: {exc}", 8000)
             return
-        self.statusBar().showMessage(f"Saved layout '{self.layout_name}'", 4000)
+        self.statusBar().showMessage(f"Saved workspace '{self.workspace_name}'", 4000)
 
-    def apply_layout(self, layout: Layout) -> None:
-        """Make the window match a layout now: the views it has, then where the panels are."""
-        wanted = [s for s in self.project.view_specs if (s.get("title") or s["type"]) not in layout.removed]
-        wanted += layout.added
+    def apply_workspace(self, workspace: Workspace) -> None:
+        """Make the window match a workspace now: the views it has, then where the panels are."""
+        wanted = [s for s in self.project.view_specs if (s.get("title") or s["type"]) not in workspace.removed]
+        wanted += workspace.added
         titles = [s.get("title") or s["type"] for s in wanted]
         for view in [v for v in self.views if v.title not in titles]:
             self.remove_view(view)
@@ -176,78 +193,78 @@ class MainWindow(QMainWindow):
         for spec in wanted:
             if (spec.get("title") or spec["type"]) not in have:
                 self.add_view(spec)
-        self._added = {s.get("title") or s["type"]: s for s in layout.added}
-        self._removed = list(layout.removed)
-        self._restore_layout(layout, geometry=False)           # the window keeps its size when switching
+        self._added = {s.get("title") or s["type"]: s for s in workspace.added}
+        self._removed = list(workspace.removed)
+        self._restore_workspace(workspace, geometry=False)           # the window keeps its size when switching
         self._views_changed()
 
-    def switch_layout(self, name: str) -> bool:
-        """Open a saved layout. Changes to the one in use that were not saved are dropped."""
-        layout = load_layout(self.layout_dir, name) if self.layout_dir is not None else None
-        if layout is None:
+    def switch_workspace(self, name: str) -> bool:
+        """Open a saved workspace. Changes to the one in use that were not saved are dropped."""
+        workspace = load_workspace(self.workspace_dir, name) if self.workspace_dir is not None else None
+        if workspace is None:
             return False
-        self.layout_name = name
+        self.workspace_name = name
         self._set_title()
-        self.apply_layout(layout)
+        self.apply_workspace(workspace)
         return True
 
-    def save_layout_as(self, name: str) -> bool:
+    def save_workspace_as(self, name: str) -> bool:
         """Save the current arrangement under a new name and carry on in it (an existing name is overwritten)."""
         name = name.strip()
-        if not name or self.layout_dir is None:
+        if not name or self.workspace_dir is None:
             return False
-        self.layout_name = name
+        self.workspace_name = name
         self._set_title()
-        self.save_layout_clicked()
+        self.save_workspace_clicked()
         return True
 
-    def delete_layout(self, name: str) -> bool:
-        """Delete a saved layout. If it is the one in use, the window keeps its arrangement but is
+    def delete_workspace(self, name: str) -> bool:
+        """Delete a saved workspace. If it is the one in use, the window keeps its arrangement but is
         no longer attached to a saved file (saving writes it again)."""
-        if self.layout_dir is None or name not in self.saved_layout_names():
+        if self.workspace_dir is None or name not in self.saved_workspace_names():
             return False
-        delete_layout(self.layout_dir, name)
-        self.statusBar().showMessage(f"Deleted layout '{name}'", 4000)
+        delete_workspace(self.workspace_dir, name)
+        self.statusBar().showMessage(f"Deleted workspace '{name}'", 4000)
         return True
 
-    def reset_layout(self) -> None:
+    def reset_workspace(self) -> None:
         """Put the window back to the project's own views and the default arrangement. This changes
         only what is on screen; it is saved if and when the user saves."""
-        self.apply_layout(Layout())
-        self.statusBar().showMessage("Showing the project's defaults (save to keep them as this layout)", 6000)
+        self.apply_workspace(Workspace())
+        self.statusBar().showMessage("Showing the project's defaults (save to keep them as this workspace)", 6000)
 
-    def _fill_layout_menu(self) -> None:
+    def _fill_workspace_menu(self) -> None:
         from PySide6.QtGui import QAction, QActionGroup
 
-        menu = self.layout_menu
+        menu = self.workspace_menu
         menu.clear()
-        enabled = self.layout_dir is not None
-        saved = self.saved_layout_names()
+        enabled = self.workspace_dir is not None
+        saved = self.saved_workspace_names()
         group = QActionGroup(menu)
-        for name in dict.fromkeys(saved + ([self.layout_name] if enabled else [])):
+        for name in dict.fromkeys(saved + ([self.workspace_name] if enabled else [])):
             action = QAction(name if name in saved else f"{name} (not saved yet)", menu)
             action.setCheckable(True)
-            action.setChecked(name == self.layout_name)
+            action.setChecked(name == self.workspace_name)
             action.setEnabled(enabled and name in saved)
-            action.triggered.connect(lambda _c=False, n=name: self.switch_layout(n))
+            action.triggered.connect(lambda _c=False, n=name: self.switch_workspace(n))
             group.addAction(action)
             menu.addAction(action)
         menu.addSeparator()
-        save = menu.addAction(f"Save layout '{self.layout_name}'", self.save_layout_clicked)
+        save = menu.addAction(f"Save workspace '{self.workspace_name}'", self.save_workspace_clicked)
         save.setShortcut(QKeySequence.StandardKey.Save)
         save.setEnabled(enabled)
-        as_new = menu.addAction("Save layout as…", self._ask_save_layout_as)
+        as_new = menu.addAction("Save workspace as…", self._ask_save_workspace_as)
         as_new.setEnabled(enabled)
-        delete = menu.addAction(f"Delete layout '{self.layout_name}'", lambda: self.delete_layout(self.layout_name))
-        delete.setEnabled(enabled and self.layout_name in saved)
-        menu.addAction("Reset to the project's defaults", self.reset_layout)
+        delete = menu.addAction(f"Delete workspace '{self.workspace_name}'", lambda: self.delete_workspace(self.workspace_name))
+        delete.setEnabled(enabled and self.workspace_name in saved)
+        menu.addAction("Reset to the project's defaults", self.reset_workspace)
 
-    def _ask_save_layout_as(self) -> None:
+    def _ask_save_workspace_as(self) -> None:
         from PySide6.QtWidgets import QInputDialog
 
-        name, ok = QInputDialog.getText(self, "Save layout as", "Name for this arrangement of views and panels:")
+        name, ok = QInputDialog.getText(self, "Save workspace as", "Name for this arrangement of views and panels:")
         if ok:
-            self.save_layout_as(name)
+            self.save_workspace_as(name)
 
     def _make_dock(self, view: View, area: str) -> QDockWidget:
         dock = QDockWidget(view.title)

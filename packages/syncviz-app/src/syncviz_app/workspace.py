@@ -1,15 +1,17 @@
-"""Layouts: what the user has arranged in the window, kept as named presets for each project.
+"""Workspaces: what the user has arranged in the window, kept as named presets for each project.
 
 The project file is the author's description of the data and is never rewritten by the app. A
-layout is the user's arrangement on top of it:
+workspace is the user's arrangement on top of it:
 
 * the views the user added, and which of the project's own views they removed;
-* where the panels, toolbars and sidebar are and how big (Qt's saved window state).
+* where the panels, toolbars and sidebar are and how big (Qt's saved window state);
+* the working settings: the filters and whether movement skips what they hide, the playback speed,
+  what a frame is and how many each step moves, and where the playhead is (never whether it is playing).
 
-Each layout is its own file, `<name>.json`, in the project's own `layouts` folder (next to the
-project file, or wherever the project's `layouts_dir` says), so projects never share files. The
-project file may say which layout opens first (`layout: Whisker analysis`), and `--layout NAME`
-on the command line overrides that. Layouts are written only when the user saves them.
+Each workspace is its own file, `<name>.json`, in the project's own `workspaces` folder (next to the
+project file, or wherever the project's `workspaces_dir` says), so projects never share files. The
+project file may say which workspace opens first (`workspace: Whisker analysis`), and `--workspace NAME`
+on the command line overrides that. Workspaces are written only when the user saves them.
 """
 
 from __future__ import annotations
@@ -20,21 +22,22 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 DEFAULT_NAME = "Default"
-LAYOUTS_FOLDER = "layouts"
+WORKSPACES_FOLDER = "workspaces"
 
 
 @dataclass
-class Layout:
+class Workspace:
     added: list[dict] = field(default_factory=list)       # specs of views the user added
     removed: list[str] = field(default_factory=list)      # titles of project views the user removed
     window: str | None = None                             # Qt window geometry, base64
     main_state: str | None = None                         # Qt toolbar and sidebar state, base64
     views_state: str | None = None                        # Qt state of the views area, base64
+    settings: dict = field(default_factory=dict)          # filters, frame step, speed, playhead (see controls.py)
 
 
-def layouts_dir(project_path: str | Path, configured: str | None = None) -> Path:
-    """The folder holding this project's layouts."""
-    return Path(project_path).parent / (configured or LAYOUTS_FOLDER)
+def workspaces_dir(project_path: str | Path, configured: str | None = None) -> Path:
+    """The folder holding this project's workspaces."""
+    return Path(project_path).parent / (configured or WORKSPACES_FOLDER)
 
 
 def _file(directory: Path, name: str) -> Path:
@@ -42,8 +45,8 @@ def _file(directory: Path, name: str) -> Path:
     return directory / f"{safe}.json"
 
 
-def list_layouts(directory: Path) -> list[str]:
-    """Names of the saved layouts, in alphabetical order."""
+def list_workspaces(directory: Path) -> list[str]:
+    """Names of the saved workspaces, in alphabetical order."""
     names = []
     for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
         try:
@@ -53,27 +56,28 @@ def list_layouts(directory: Path) -> list[str]:
     return names
 
 
-def load_layout(directory: Path, name: str) -> Layout | None:
-    """The named layout, or None if there is none or it cannot be read."""
+def load_workspace(directory: Path, name: str) -> Workspace | None:
+    """The named workspace, or None if there is none or it cannot be read."""
     try:
         data = json.loads(_file(directory, name).read_text(encoding="utf-8"))
-        return Layout(
+        return Workspace(
             added=[dict(s) for s in data.get("added", [])],
             removed=[str(t) for t in data.get("removed", [])],
             window=data.get("window"),
             main_state=data.get("main_state"),
             views_state=data.get("views_state"),
+            settings=dict(data.get("settings", {})),
         )
     except (OSError, ValueError, TypeError, AttributeError):
         return None
 
 
-def save_layout(directory: Path, name: str, layout: Layout) -> Path:
+def save_workspace(directory: Path, name: str, workspace: Workspace) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = _file(directory, name)
-    path.write_text(json.dumps({"name": name, **asdict(layout)}, indent=2), encoding="utf-8")
+    path.write_text(json.dumps({"name": name, **asdict(workspace)}, indent=2), encoding="utf-8")
     return path
 
 
-def delete_layout(directory: Path, name: str) -> None:
+def delete_workspace(directory: Path, name: str) -> None:
     _file(directory, name).unlink(missing_ok=True)

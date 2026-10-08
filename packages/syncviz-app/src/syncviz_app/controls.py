@@ -21,6 +21,11 @@ TIME_LABEL_INTERVAL_MS = 50
 ALL = "All"
 
 
+def _plain(value):
+    """A value as plain JSON data (numpy scalars from data files become Python ones)."""
+    return value.item() if hasattr(value, "item") else value
+
+
 def _caption(text: str) -> QLabel:
     """A bold heading for a group of controls."""
     label = QLabel(text)
@@ -67,6 +72,30 @@ class NavigationBar(QToolBar):
         self._label_timer.timeout.connect(self._refresh_time_label)
         tl.subscribe(self._on_timeline)
         self._on_timeline(tl)
+        self._defaults = self.state()
+
+    # -- saved state ---------------------------------------------------------------------
+    def state(self) -> dict:
+        """The settings this bar holds, as plain data, for saving in a workspace."""
+        out = {"speed": self.context.timeline.rate}
+        stepper = self.context.stepper
+        if stepper is not None:
+            out.update({"frames": stepper.count, "frame_defined_by": stepper.reference,
+                        "interval_ms": self.interval.value()})
+        return out
+
+    def apply_state(self, state: dict) -> None:
+        """Set the bar from saved settings; anything missing returns to how the bar started."""
+        state = {**self._defaults, **state}
+        index = self.speed.findData(float(state["speed"]))
+        if index >= 0:
+            self.speed.setCurrentIndex(index)
+        if self.context.stepper is not None and "frames" in state:
+            self.count.setValue(int(state["frames"]))
+            self.interval.setValue(float(state["interval_ms"]))
+            name = state.get("frame_defined_by")
+            if name is not None and self.base.findText(name) >= 0:
+                self.base.setCurrentText(name)
 
     # -- moving between segments ---------------------------------------------------------
     def _add_segment_group(self, nav) -> None:
@@ -233,6 +262,30 @@ class FilterBar(QToolBar):
 
         nav.subscribe(lambda _n: self._update_match_label())
         self._update_match_label()
+        self._defaults = self.state()
+
+    # -- saved state ---------------------------------------------------------------------
+    def state(self) -> dict:
+        """Which value each filter has (None = all) and whether movement skips what they hide."""
+        return {"filters": {a: _plain(box.currentData()) for a, box in self._filters.items()},
+                "skip": self.skip.isChecked()}
+
+    def apply_state(self, state: dict) -> None:
+        """Set the filters from saved settings; anything missing returns to how the bar started."""
+        filters = {**self._defaults["filters"], **state.get("filters", {})}
+        self.skip.setChecked(bool(state.get("skip", self._defaults["skip"])))
+        for attribute, box in self._filters.items():
+            wanted = filters.get(attribute)
+            index = 0
+            for i in range(box.count()):
+                data = box.itemData(i)
+                if wanted is not None and data is not None and (data == wanted or str(data) == str(wanted)):
+                    index = i
+                    break
+            box.blockSignals(True)
+            box.setCurrentIndex(index)
+            box.blockSignals(False)
+        self._filters_changed(0)
 
     def _update_match_label(self) -> None:
         nav = self.context.navigator

@@ -8,7 +8,7 @@ from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL
 from syncviz_app.context import AppContext
-from syncviz_app.layout import DEFAULT_NAME, layouts_dir, load_layout
+from syncviz_app.workspace import DEFAULT_NAME, workspaces_dir, load_workspace
 from syncviz_app.main_window import MainWindow
 from syncviz_app.project import load_project
 from syncviz_app.view_factory import create_view, fit_timeline, register_view
@@ -18,17 +18,17 @@ from syncviz_app.views.base import View
 DEFAULT_STEP_INTERVAL_MS = 10.0
 
 
-def build_window(project_path: str | Path, debug: bool = False, use_layout: bool = True,
-                 layout_name: str | None = None) -> MainWindow:
-    """Open a project. `layout_name` picks the layout (else the project file's `layout:`, else "Default");
-    `use_layout=False` ignores layouts altogether."""
+def build_window(project_path: str | Path, debug: bool = False, use_workspace: bool = True,
+                 workspace_name: str | None = None) -> MainWindow:
+    """Open a project. `workspace_name` picks the workspace (else the project file's `workspace:`, else "Default");
+    `use_workspace=False` ignores workspaces altogether."""
     project = load_project(project_path)
-    directory = layouts_dir(project_path, project.config.get("layouts_dir")) if use_layout else None
-    chosen = layout_name or project.config.get("layout") or DEFAULT_NAME
-    layout = load_layout(directory, chosen) if directory else None
-    layout_notes: list[str] = []
-    if directory and layout is None and (layout_name or project.config.get("layout")):
-        layout_notes = [f"layout {chosen!r} was not found in {directory}; showing the project's defaults"]
+    directory = workspaces_dir(project_path, project.config.get("workspaces_dir")) if use_workspace else None
+    chosen = workspace_name or project.config.get("workspace") or DEFAULT_NAME
+    workspace = load_workspace(directory, chosen) if directory else None
+    workspace_notes: list[str] = []
+    if directory and workspace is None and (workspace_name or project.config.get("workspace")):
+        workspace_notes = [f"workspace {chosen!r} was not found in {directory}; showing the project's defaults"]
     bus = ActionBus()
     timeline = Timeline(bus, 0.0, 1.0)           # real range is set once the views report theirs
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
@@ -45,8 +45,8 @@ def build_window(project_path: str | Path, debug: bool = False, use_layout: bool
 
     views: list[View] = []
     specs = project.view_specs
-    if layout is not None:
-        specs = [s for s in specs if (s.get("title") or s["type"]) not in layout.removed] + layout.added
+    if workspace is not None:
+        specs = [s for s in specs if (s.get("title") or s["type"]) not in workspace.removed] + workspace.added
     for spec in specs:
         view = create_view(context, spec)
         if view is None:
@@ -74,5 +74,5 @@ def build_window(project_path: str | Path, debug: bool = False, use_layout: bool
     if "view" in step_spec and step_spec["view"] not in bases:
         context.notes.append(f"step view {step_spec['view']!r} has no time grid; using {context.stepper.reference!r}")
 
-    context.notes.extend(layout_notes)
-    return MainWindow(project, context, views, debug=debug, layout=layout, layout_dir=directory, layout_name=chosen)
+    context.notes.extend(workspace_notes)
+    return MainWindow(project, context, views, debug=debug, workspace=workspace, workspace_dir=directory, workspace_name=chosen)

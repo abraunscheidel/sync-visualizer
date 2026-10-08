@@ -15,7 +15,7 @@ from syncviz_app.app import build_window
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="syncviz")
     parser.add_argument("project", help="path to a project YAML file")
-    parser.add_argument("--layout", metavar="NAME", help="open this saved layout (overrides the project file's `layout:`)")
+    parser.add_argument("--workspace", metavar="NAME", help="open this saved workspace (overrides the project file's `workspace:`)")
     parser.add_argument("--debug", action="store_true",
                         help="add the Debug menu (slow-decoding simulation, live status); also set by SYNCVIZ_DEBUG=1")
     parser.add_argument("--screenshot", metavar="PNG", help="render one frame to a file and exit (for checking)")
@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = build_window(args.project, debug=args.debug or os.environ.get("SYNCVIZ_DEBUG") == "1",
-                          use_layout=not args.screenshot, layout_name=args.layout)
+                          use_workspace=not args.screenshot, workspace_name=args.workspace)
     window.show()
 
     if args.screenshot:
