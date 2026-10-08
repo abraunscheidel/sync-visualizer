@@ -40,6 +40,7 @@ class ViewSetting:
     kind: str
     value: object
     choices: list[tuple[str, object]] | None = None
+    description: str = ""                           # what the setting is and how to read it, shown as a tooltip
     group: str | None = None            # toggles that share a group are shown together under one switch for the whole group
 
 
@@ -49,6 +50,7 @@ class Candidate:
 
     label: str
     spec: dict
+    description: str = ""                       # what the data is, shown as a tooltip
 
 
 class View(QWidget):

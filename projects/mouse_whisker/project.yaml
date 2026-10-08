@@ -41,6 +41,26 @@ segmentations:
     number_attribute: trial      # shown as the segment's number
     filters: [stimulus, outcome, choice, servo_position]
 
+# Notes on how to read a field, shown as tooltips next to the description the data file itself gives. Keys are the names
+# the interface shows. See docs/datasets/dandi-000231.md for the longer guide.
+glossary:
+  stimulus: "Which object shape was presented: concave or convex. The mouse reports it by licking left or right."
+  outcome: "correct, error, or spoil. A spoiled trial (no usable choice) should be ignored in any analysis."
+  choice: "Which spout the mouse licked: left, right, or nogo (no lick)."
+  servo_position: "How far the object was from the face: close, medium or far. Farther means fewer whiskers can reach it."
+  Lick left: "The tongue touched the left spout."
+  Lick right: "The tongue touched the right spout."
+  Reward left: "A drop of water was delivered at the left spout."
+  Contact C0: "A touch of the object by whisker C0. Start and end are the dataset authors' definition, taken from the tracking."
+  Contact C1: "A touch of the object by whisker C1. Start and end are the dataset authors' definition, taken from the tracking."
+  Whiskers: "The four tracked whiskers, C0 to C3. Each is followed by eight points from the tip to the base."
+  Contacts: "Touches of the object, as a badge for when each happens and a ring for where on the picture."
+  Licks and rewards: "Tongue contacts with the spouts, and water deliveries."
+  Contact point C0: "Where on the picture whisker C0 touched the object, averaged over the contact, so the ring does not move during it."
+  Contact point C1: "Where on the picture whisker C1 touched the object, averaged over the contact, so the ring does not move during it."
+  Contact point C2: "Where on the picture whisker C2 touched the object, averaged over the contact, so the ring does not move during it."
+  Contact point C3: "Where on the picture whisker C3 touched the object, averaged over the contact, so the ring does not move during it."
+
 # What one step of the playhead (Shift+Left / Shift+Right) means. Optional: without this the
 # toolbar starts on the first view that has a time grid, and the user can change it there.
 # Either name a view:  step: {view: Whisker video}   or a fixed interval:  step: {interval_ms: 25}

@@ -19,6 +19,7 @@ class IntervalSeries:
     stops: np.ndarray                                       # seconds, >= starts
     attributes: dict[str, np.ndarray] = field(default_factory=dict)   # one value per interval
     name: str = ""
+    descriptions: dict[str, str] = field(default_factory=dict)        # what each attribute means, as the source states it
 
     def __post_init__(self) -> None:
         starts = np.asarray(self.starts, dtype=float)

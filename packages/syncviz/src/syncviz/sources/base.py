@@ -32,6 +32,8 @@ class DataEntry:
     kind: str
     members: tuple[str, ...] = field(default_factory=tuple)
     labels: dict[str, str] = field(default_factory=dict)   # display name of a member, where it has a better one
+    description: str = ""                                    # what the whole thing is, as the source states it
+    member_descriptions: dict[str, str] = field(default_factory=dict)      # what each member is
 
 
 class Source(ABC):

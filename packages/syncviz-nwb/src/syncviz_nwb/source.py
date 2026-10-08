@@ -20,6 +20,12 @@ _TIME_COLUMNS = {"start_time", "stop_time"}
 LAZY_MIN_SAMPLES = 5_000_000      # a series with at least this many samples stays in the file
 
 
+def _clean(text) -> str:
+    """A description as stored, or nothing if it is only a placeholder."""
+    text = str(text or "").strip()
+    return "" if text in ("no description", "No description", "NA", "N/A") else text
+
+
 def _conversion_metadata(scale: float, offset: float) -> dict:
     """What turns the numbers stored in the file into the series' unit (value = stored * conversion + offset), kept so
     that something needing the stored numbers (pixel positions on a video) can undo it."""
@@ -82,15 +88,17 @@ class NWBSource(Source):
                 entries.append(self._units_entry(nwb.units))
             for path, obj in objects:
                 if isinstance(obj, TimeIntervals):
-                    entries.append(DataEntry(path, "intervals"))
+                    entries.append(DataEntry(path, "intervals", description=_clean(getattr(obj, "description", ""))))
                 elif hasattr(obj, "time_series"):
                     members = tuple(n for n, ts in obj.time_series.items() if plottable(ts))
                     if members:
                         kind = "events" if isinstance(obj, BehavioralEvents) else "timeseries"
-                        entries.append(DataEntry(path, kind, members))
+                        entries.append(DataEntry(path, kind, members, description=_clean(getattr(obj, "description", "")),
+                                                 member_descriptions={n: _clean(getattr(ts, "description", ""))
+                                                                      for n, ts in obj.time_series.items() if n in members}))
                 elif isinstance(obj, NWBTimeSeries) and plottable(obj):
-                    entries.append(DataEntry(path, "timeseries", (obj.name,)))
-        entries += [DataEntry(path, "points", nodes) for path, nodes in self._pose_paths(self.path)]
+                    entries.append(DataEntry(path, "timeseries", (obj.name,), description=_clean(getattr(obj, "description", ""))))
+        entries += [DataEntry(path, "points", nodes, description=text) for path, nodes, text in self._pose_paths(self.path)]
         return entries
 
     def read_points(self, path: str) -> PointTracks:
@@ -120,7 +128,7 @@ class NWBSource(Source):
                            metadata={"description": description, "stored_conversion": conversion})
 
     @staticmethod
-    def _pose_paths(path) -> list[tuple[str, tuple[str, ...]]]:
+    def _pose_paths(path) -> list[tuple[str, tuple[str, ...], str]]:
         import h5py
 
         found = []
@@ -128,7 +136,8 @@ class NWBSource(Source):
             def visit(name, obj):
                 if isinstance(obj, h5py.Group) and obj.attrs.get("neurodata_type") in ("PoseEstimation", b"PoseEstimation"):
                     nodes = tuple(x.decode() if isinstance(x, bytes) else str(x) for x in obj["nodes"][:]) if "nodes" in obj else ()
-                    found.append((name, nodes))
+                    text = obj["description"][()] if "description" in obj else ""
+                    found.append((name, nodes, text.decode() if isinstance(text, bytes) else str(text)))
             f.visititems(visit)
         return found
 
@@ -183,7 +192,12 @@ class NWBSource(Source):
                 ):
                     continue
                 attributes[column] = values[order]
-            return IntervalSeries(starts[order], stops[order], attributes, name=path)
+            descriptions = {}
+            for column in attributes:
+                text = getattr(table[column], "description", "") if column in table.colnames else ""
+                if text and text != "no description":
+                    descriptions[column] = str(text)
+            return IntervalSeries(starts[order], stops[order], attributes, name=path, descriptions=descriptions)
 
     def read_events(self, path: str) -> dict[str, EventSeries]:
         """A BehavioralEvents container (or single series) as EventSeries by name."""

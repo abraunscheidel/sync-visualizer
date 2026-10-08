@@ -249,7 +249,12 @@ class FilterBar(QToolBar):
             box.addItem(ALL, None)
             for value in nav.intervals.unique(attribute):
                 box.addItem(str(value), value)
-            self.addWidget(QLabel(f"  {attribute}: "))
+            label = QLabel(f"  {attribute}: ")
+            tip = context.explain(attribute, nav.intervals.descriptions.get(attribute, ""))
+            if tip:
+                label.setToolTip(tip)
+                box.setToolTip(tip)
+            self.addWidget(label)
             self.addWidget(box)
             self._filters[attribute] = box
         self._refresh_options()                       # counts in the option text; dead ends disabled

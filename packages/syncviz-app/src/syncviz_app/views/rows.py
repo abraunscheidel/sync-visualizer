@@ -58,7 +58,7 @@ def row_candidates(catalog: dict[str, list[DataEntry]], type_name: str) -> list[
             if rows:
                 name = entry.path.rsplit("/", 1)[-1]
                 out.append(Candidate(f"{name}   ({source}: {entry.path})",
-                                     {"type": type_name, "title": name.capitalize(), "rows": rows}))
+                                     {"type": type_name, "title": name.capitalize(), "rows": rows}, entry.description))
     return out
 
 

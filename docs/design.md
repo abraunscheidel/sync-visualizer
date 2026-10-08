@@ -2213,3 +2213,18 @@ from `read_points`. The video overlay `skeletons:` draws them on the picture: **
 at each, the first larger) or **both**, chosen in the Views list (`skeleton_style:` is the project's start). Points are placed from the
 tracked sample nearest the frame on screen, a frame with no sample close enough shows nothing, and a point missing in a frame is
 skipped, never drawn at the origin. A whisker read takes about 0.4 s and 30 MB.
+
+### 28.6 What a field means: descriptions and the glossary
+
+A name on screen should say what it is and how to read it. Two sources feed one tooltip (`AppContext.explain(term, described)`):
+
+* **What it is, from the data.** Sources pass on the descriptions stored in the files: `IntervalSeries.descriptions` (one per
+  attribute, for example a trial table column) and `DataEntry.description` / `member_descriptions` (what the Add view dialog shows).
+  Placeholders such as "no description" are dropped, and an item with nothing to say gets no tooltip.
+* **How to read it, from the project.** A `glossary:` section of the project file maps the names the interface shows (a filter's
+  field, an overlay item, a group) to a note. A view item can also carry its own `description:`, which then stands in for the
+  file's. The glossary is where interpretation lives (which flag means "ignore this trial", why a ring does not move), and the
+  application has no such text of its own.
+
+Shown today as tooltips on the segment filters, on the Add view dialog's entries, and on the overlay switches and groups in the Views
+list. The longer, dataset-wide reference is in `docs/datasets/`.

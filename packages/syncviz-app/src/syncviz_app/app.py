@@ -34,7 +34,8 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     cache = DiskCache(project.root / project.config["cache"]) if "cache" in project.config else None
     project.attach_cache(cache)
     context = AppContext(bus=bus, timeline=timeline, resources=project.resources, cache=cache,
-                         collection=project.collection, collection_label=project.collection_label)
+                         collection=project.collection, collection_label=project.collection_label,
+                         glossary={str(k): str(v) for k, v in (project.config.get("glossary") or {}).items()})
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():

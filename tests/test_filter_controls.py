@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from syncviz.core import ActionBus, SegmentNavigator, Timeline
 from syncviz.resources import IntervalSeries
+from syncviz_app.context import AppContext
 from syncviz_app.controls import FilterBar
 
 
@@ -36,7 +37,7 @@ def controls(qapp):
     timeline = Timeline(bus, 0.0, 60.0)
     nav = SegmentNavigator(bus, intervals, label="Trial")
     nav.follow(timeline)
-    context = SimpleNamespace(bus=bus, timeline=timeline, navigator=nav, notes=[])
+    context = AppContext(bus=bus, timeline=timeline, resources=None, navigator=nav)       # a real context: it explains fields too
     bar = FilterBar(context, ["stimulus", "outcome"])
     return bar, nav
 

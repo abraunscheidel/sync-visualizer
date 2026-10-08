@@ -45,6 +45,8 @@ class AddViewDialog(QDialog):
             for candidate in candidates:
                 child = QTreeWidgetItem([candidate.label])
                 child.setData(0, Qt.ItemDataRole.UserRole, candidate)
+                if candidate.description:
+                    child.setToolTip(0, candidate.description)
                 parent_item.addChild(child)
             parent_item.setExpanded(True)
         if not self.groups:

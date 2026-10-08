@@ -213,7 +213,8 @@ class VideoView(View):
                 context.notes.append(f"video skeleton {spec.get('name', '')!r} left out: {exc}")
                 continue
             scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0
-            skeletons.append({"name": spec.get("name", ""), "group": spec.get("group"), "tracks": tracks, "scale": scale,
+            skeletons.append({"name": spec.get("name", ""), "group": spec.get("group"),
+                              "description": context.explain(spec.get("name", ""), spec.get("description") or tracks.metadata.get("description", "")), "tracks": tracks, "scale": scale,
                               "order": tracks.chain(), "color": QColor(spec["color"]) if "color" in spec else palette(colour_index)})
             colour_index += 1
         for spec in overlay.get("lines", []):
@@ -228,7 +229,7 @@ class VideoView(View):
             stored = first.metadata.get("conversion", 1.0)
             # Pixels per stored unit: the project can say how many units make a pixel; otherwise undo the file's conversion.
             scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0 / stored
-            lines.append({"name": spec.get("name", ""), "group": spec.get("group"), "times": times, "scale": scale, "color": QColor(spec["color"]) if "color" in spec else palette(colour_index),
+            lines.append({"name": spec.get("name", ""), "group": spec.get("group"), "description": context.explain(spec.get("name", ""), spec.get("description", "")), "times": times, "scale": scale, "color": QColor(spec["color"]) if "color" in spec else palette(colour_index),
                           "max_gap": 1.5 * float(np.median(np.diff(times))) if len(times) > 2 else 0.01,
                           **{key: np.asarray(s.values, float) for key, s in series.items()}})
             colour_index += 1
@@ -244,7 +245,7 @@ class VideoView(View):
             for line in (*skeletons, *lines):        # `color_of: Whisker C0` draws the ring in that whisker's colour
                 if line["name"] == spec.get("color_of"):
                     colour = line["color"]
-            markers.append({"name": spec.get("name", ""), "group": spec.get("group"), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
+            markers.append({"name": spec.get("name", ""), "group": spec.get("group"), "description": context.explain(spec.get("name", ""), spec.get("description", "")), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
                             "y": np.asarray(y, float), "scale": scale, "color": colour})
             colour_index += 1
         self._track_defaults = set(overlay.get("hidden", []))
@@ -269,7 +270,8 @@ class VideoView(View):
             except MissingDataError as exc:
                 context.notes.append(f"video overlay row {row.get('name', '')!r} left out: {exc}")
                 continue
-            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data, "group": row.get("group")})
+            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data, "group": row.get("group"),
+                         "description": context.explain(row.get("name", ""), row.get("description", ""))})
         self._badge_defaults = {"corner": overlay.get("corner", DEFAULT_CORNER), "hidden": set(overlay.get("hidden", []))}
         self.badges = CornerBadges(rows, self._badge_defaults["corner"], float(overlay.get("decay", DEFAULT_DECAY_S)),
                                    self._badge_defaults["hidden"])
@@ -294,14 +296,14 @@ class VideoView(View):
             out.append(ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
                                    [(labels[c], c) for c in (OFF, *CORNERS)]))
             out += [ViewSetting(f"overlay.show.{row['name']}", row["name"], "toggle", row["name"] not in self.badges.hidden,
-                                group=row.get("group")) for row in self.badges.rows]
+                                description=row.get("description", ""), group=row.get("group")) for row in self.badges.rows]
         if self.skeletons is not None:
             out.append(ViewSetting("overlay.skeleton_style", "Tracked points", "choice", self.skeletons.style,
                                    [(SKELETON_LABELS[s], s) for s in SKELETON_STYLES]))
         for layer in (self.skeletons, self.lines, self.markers):    # what is drawn in the picture itself
             if layer is not None:
                 out += [ViewSetting(f"overlay.track.{item['name']}", f"Draw {item['name']}", "toggle", item["name"] not in layer.hidden,
-                                    group=item.get("group")) for item in layer.items]
+                                    description=item.get("description", ""), group=item.get("group")) for item in layer.items]
         return out
 
     def apply_setting(self, key: str, value) -> None:

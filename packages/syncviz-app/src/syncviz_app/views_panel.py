@@ -170,6 +170,8 @@ class ViewsPanel(QWidget):
 
     def _add_toggle(self, setting, parent_layout) -> QCheckBox:
         check = saved_in_workspace(QCheckBox(setting.label))
+        if setting.description:
+            check.setToolTip(setting.description)
         check.setChecked(bool(setting.value))
         check.toggled.connect(lambda on, k=setting.key: self.window.set_view_setting(self._selected_view(), k, on))
         parent_layout.addWidget(check)
@@ -179,6 +181,7 @@ class ViewsPanel(QWidget):
         """One switch for a group of toggles, above the toggles themselves. It shows a partial state when only some are on,
         and is worked out from them: only the individual switches are saved."""
         box = not_saved(QCheckBox(name), "worked out from the switches inside it, which are what is saved")
+        box.setToolTip(self.window.context.explain(name))
         box.setTristate(True)
         box.setStyleSheet("font-weight: 600;")
         self.settings_layout.addWidget(box)

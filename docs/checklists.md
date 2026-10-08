@@ -8,6 +8,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
   If yes, wrap it with `saved_in_workspace(...)` and add it to that bar's `state()` and `apply_state()` in
   `controls.py`, defaulting to how the bar started. If not, wrap it with `not_saved(widget, "why")`.
   *Enforced:* `test_every_input_control_says_whether_a_workspace_saves_it` fails for an unmarked control.
+- [ ] **Tooltip:** a field or item the user can see by name should explain itself: `context.explain(name, description_from_the_data)`;
+  the project's notes on how to read it go in its `glossary:`, not in the application.
 - [ ] **Shortcut:** if it has a keyboard shortcut, add it to the table in `keys.py` (so it can become configurable).
 - [ ] **Navigation rules:** if it moves the playhead, make sure it goes through the timeline's constraint, so the
   filter governs it (§10.1). Never set `timeline.time` directly.

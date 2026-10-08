@@ -26,7 +26,8 @@ class TimeSeriesView(TimeWindowView):
                     for member in entry.members:
                         spec = {"type": cls.type_name, "title": member,
                                 "series": {"from": f"{source}:{entry.path}", "member": member}}
-                        out.append(Candidate(f"{member}   ({source}: {entry.path})", spec))
+                        out.append(Candidate(f"{member}   ({source}: {entry.path})", spec,
+                                             entry.member_descriptions.get(member) or entry.description))
         for processor in processors.all_processors():                   # series computed from the data
             for label, title, series in processor.candidates(catalog):
                 out.append(Candidate(label, {"type": cls.type_name, "title": title, "series": series}))
