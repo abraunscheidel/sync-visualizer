@@ -765,27 +765,30 @@ Design consequences:
 #### Worked example: DANDI 000231 (sub-219CR, session 2019-04-04)
 
 Measured on the full video by decoding every frame and recording mean brightness.
-This is evidence from one session; the other session has not yet been scanned.
+Measured on the full video by decoding every frame and recording mean brightness.
+Both sessions of this mouse were scanned and agree.
 
-- The video has 391,200 frames, exactly equal to the span of the NWB tracking
-  frame grid (frames 0 to 391,199 at 200 Hz). The video container's own timing
-  is unusable (it reports 30 fps and a duration of 13,040 s), so frames must be
-  addressed by index, not container time.
-- Brightness is clearly bimodal. 230 runs of dark frames were found, each
-  27 or 28 frames long (about 135 ms).
-- Every dark frame lies inside a gap in the NWB whisker tracking, consistent with
-  tracking being unable to run on black frames. Not every tracking gap is dark:
-  about 4% of the missing frames are short gaps (around 5 frames) of another cause.
-- 228 of the 230 dark runs begin within 2 frames of a trial start, and 97.8% begin
-  exactly on it. Every one of the 228 trials has a matching dark run. Two dark
-  runs (at about 1614.0 s and 1944.5 s) are not at a trial start and are
-  unexplained.
+- The video frame count equals the span of the NWB tracking frame grid exactly
+  (session 2019-04-04: 391,200 frames; session 2019-04-03: 419,400 frames; both at
+  200 Hz). The video container's own timing is unusable (it reports 30 fps and a
+  duration of 13,040 s), so frames must be addressed by index, not container time.
+- Brightness is clearly bimodal. Dark runs are all 27 or 28 frames long (about
+  135 ms): 230 runs in session 2019-04-04 and 252 in session 2019-04-03.
+- Every dark frame lies inside a gap in the NWB whisker tracking (all but one
+  frame of 6,823 in 2019-04-03), consistent with tracking being unable to run on
+  black frames. Not every tracking gap is dark: a few percent of missing frames
+  are short gaps (around 5 frames) of another cause.
+- Almost every dark run begins within 2 frames of a trial start (98% exactly on
+  it), and every trial has one. The few runs that are not at a trial start sit
+  exactly at a trial **stop** where the next trial does not follow immediately:
+  the end of the final trial in both sessions, and one stop followed by a 7 s gap
+  at 1614.0 s in session 2019-04-04. So the blackout marks trial boundaries.
 
-This is consistent with the blackout being a per-trial marker, and with the NWB
-trial times and the video sharing one clock. It is not independent proof of
+This is consistent with the blackout being a trial-boundary marker, and with the
+NWB trial times and the video sharing one clock. It is not independent proof of
 alignment: if the dataset authors derived the trial times from these same
 blackouts, agreement shows the correction was applied, not that it was correct.
-Also, here the blackout coincides with the trial start rather than carrying
+Also, here the blackout coincides with trial boundaries rather than carrying
 extra timing information; a dataset with a separate neural recording would
 supply a second pulse train to match against.
 
