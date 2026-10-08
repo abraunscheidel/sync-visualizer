@@ -2050,7 +2050,7 @@ trailing window), trial-aligned rasters, and a firing-rate heat map.
 
 ### 16.2 Parked idea: acting on an indicator light
 
-Not built; recorded so it is not lost. Clicking a light (an event row, such as a spike unit) could mean three things,
+Not built; recorded so it is not lost. These would be actions in the sense of 28.7. Clicking a light (an event row, such as a spike unit) could mean three things,
 in increasing scope, and each is useful alone:
 
 1. **Jump to an occurrence.** Click goes to that row's next event, Shift-click to the previous. Needs only the row's
@@ -2229,11 +2229,51 @@ A name on screen should say what it is and how to read it. Two sources feed one 
 Shown today as tooltips on the segment filters, on the Add view dialog's entries, and on the overlay switches and groups in the Views
 list. The longer, dataset-wide reference is in `docs/datasets/`.
 
-### 28.7 Parked idea: choosing what a hover shows
+### 28.7 Inspecting data: targets, details, presenters, actions
 
-Not built; recorded so it is not lost, and it may turn out not to be needed. The description in a tooltip (section 28.6) says what a
-thing is and should stay as it is. What a user may want to choose is the *statistics* shown on hover: figures that are not worth
-permanent space on screen but helpful at a glance (for a spike unit: its rate, layer and depth; for a lick row: how many in the
-session). Sketch: each kind of row offers a list of available stats, the user ticks the ones that appear on hover, and the choice
-is saved in the workspace like the other display settings (so the checklist item for new controls applies). It overlaps with the
-unit-details discussion (what a click shows, and whether the user controls it), so decide the two together.
+Decided in discussion; not yet built. One mechanism for showing extra information about what is on screen, instead of a
+special case per view. It has four separate layers.
+
+**Targets.** A view can say what is under a point and returns a generic reference: source, data path, member or item, and
+optionally a time. A unit row, a whisker curve, a contact badge, an indicator tile and a trial all return one. The core
+never learns what a "unit" is.
+
+**Details.** What is known about a target: labelled fields in groups (name, value, unit), plus the description and glossary
+text of 28.6. They come from (a) generic statistics by resource type (events: count, rate, inter-event interval; time
+series: min, max, mean; intervals: count, duration), (b) source-specific extras (the NWB source adds the file's own columns,
+such as unit quality), supplied like `diagnostics()`, and (c) project config (glossary, default fields). Each statistic has a
+*scope*: the current segment, the whole session, or a window around the playhead. **The default scope is the current
+segment**, because with filters active it is unclear what to include from other segments.
+
+**Presenters.** Swappable ways to show the same details:
+
+| Presenter | Trigger | Lifetime | For |
+|---|---|---|---|
+| Tooltip | hover | momentary | the description plus the user's chosen stats |
+| Detail panel | the selection changes | until it changes again | every field, with small plots |
+| Selection-bound view | the selection changes | persistent | e.g. a raster for the selected unit |
+| Temporary view | "open as view" | until replaced or pinned | the same view, not yet in the views list |
+
+* The detail panel is a **docked core panel**.
+* There is **one selection** at a time (the contract does not prevent several later). It is shared state like the playhead.
+* A view can have a subject setting: "follow selection" or fixed to one item. A selection-bound view is an ordinary view.
+* A temporary view is a view that is not in the views list yet; "pin" adds it. There is no separate popup system.
+* The hover figures are a user-chosen subset of the detail fields, picked from the same checklist the panel uses, saved in
+  the workspace (see docs/checklists.md), with defaults from project config. This replaces the earlier parked idea of a
+  separate hover-stats feature.
+
+**Actions.** Everything a user can do with a target is a named action registered for a kind of target: select, seek to this
+time, open as view, show details, filter to windows around this event (16.2), copy value, and so on. Views, sources and
+plugins can add actions. Right-click opens a menu of the actions that apply to the target; the menu shows shortcuts.
+Left click runs the primary action and double click a second one, both set in project config, so the app stays agnostic.
+The standard default for left click is select, plus seek when the target has a time. Applicability is declared by the
+action, never hardcoded in the core. The ideas in 16.2 become ordinary actions rather than a feature of their own.
+
+**Rules.**
+* Hover is cheap, read-only and changes no state. Expensive statistics are computed lazily, cached and kept off the GUI thread.
+* Click changes state (the selection); it never moves the time axis unless the action says so.
+* Views return targets only; they never format details. The core presents what the source supplies.
+* Operational information (sync diagnostics) stays a core component and is not mixed into details.
+
+**Order of building.** (1) target and details contract, with hover on the existing views; (2) selection and the detail panel;
+(3) actions and the context menu; (4) selection-bound and temporary views.
