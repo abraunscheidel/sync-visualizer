@@ -137,9 +137,14 @@ class _FrameWidget(QWidget):
             p.setPen(text)
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._message or "No video at this time")
         if self._cue:
-            p.setPen(QColor(255, 255, 255, 190))
-            p.fillRect(QRectF(10, 10, 120, 22), QColor(0, 0, 0, 110))
-            p.drawText(QRectF(10, 10, 120, 22), Qt.AlignmentFlag.AlignCenter, self._cue)
+            # The one status message for this view: centred over the picture, calm and translucent.
+            box = QRectF(0, 0, 170, 34)
+            box.moveCenter(self.rect().center())
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 150))
+            p.drawRoundedRect(box, 8, 8)
+            p.setPen(QColor(255, 255, 255, 230))
+            p.drawText(box, Qt.AlignmentFlag.AlignCenter, self._cue)
 
 
 class VideoView(View):
@@ -165,8 +170,15 @@ class VideoView(View):
         self._progress_at = perf_counter()     # when a frame last arrived, or the wait began
         self._cue_timer = QTimer(self)
         self._cue_timer.setSingleShot(True)
-        self._cue_timer.timeout.connect(
-            lambda: self.widget.set_cue("Buffering…" if context.timeline.holding else "Loading…"))
+        self._cue_timer.timeout.connect(lambda: self.widget.set_cue(self._cue_text()))
+        context.timeline.subscribe(self._on_timeline)
+
+    def _cue_text(self) -> str:
+        return "Buffering…" if self.context.timeline.holding else "Loading…"
+
+    def _on_timeline(self, _tl) -> None:
+        if self.widget._cue:                                 # a wait is showing: keep its wording current
+            self.widget.set_cue(self._cue_text())
 
     def extent(self):
         return 0.0, self.n_frames / self.fps

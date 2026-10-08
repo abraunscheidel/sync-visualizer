@@ -407,14 +407,15 @@ def test_playback_waits_for_a_stalled_video_and_resumes_by_itself(window, qapp, 
     window.context.bus.publish(SetPlaying(True))
     assert _pump(qapp, until=lambda: tl.holding), "playback never waited for the stalled video"
     assert tl.playing
-    assert "Buffering" in window.navigation.status_label.text()
+    video = next(v for v in window.views if v.type_name == "video")
+    assert _pump(qapp, until=lambda: video.widget._cue == "Buffering…"), "the video should say it is buffering"
     held_at = tl.time
     _pump(qapp, seconds=0.2)
     assert tl.time == held_at, "the playhead kept running while the video was stalled"
     slow["on"] = False
     assert _pump(qapp, until=lambda: not tl.holding), "playback did not resume once the video caught up"
     assert _pump(qapp, until=lambda: tl.time > held_at)
-    assert window.navigation.status_label.text() == ""
+    assert _pump(qapp, until=lambda: video.widget._cue == "")
 
 
 def test_scrubbing_while_paused_is_never_held(window, qapp, monkeypatch):

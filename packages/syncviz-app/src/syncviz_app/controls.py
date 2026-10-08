@@ -59,12 +59,8 @@ class NavigationBar(QToolBar):
 
         self.time_label = QLabel()
         self.time_label.setMinimumWidth(110)
-        self.status_label = QLabel()                 # "Buffering…" while playback waits for a view
-        self.status_label.setMinimumWidth(190)
-        self.status_label.setStyleSheet("color: #e0a030; font-weight: 600; padding-left: 6px;")
         self.addSeparator()
         self.addWidget(self.time_label)
-        self.addWidget(self.status_label)
         # While playing the time changes every tick; the label only needs to keep up with the eye.
         self._label_timer = QTimer(self)
         self._label_timer.setInterval(TIME_LABEL_INTERVAL_MS)
@@ -170,7 +166,6 @@ class NavigationBar(QToolBar):
             self.play.setChecked(tl.playing)
             self.play.blockSignals(False)
         self.play.setText("Pause" if tl.playing else "Play")
-        self.status_label.setText(f"Buffering {tl.holding}…" if tl.holding else "")
         if tl.playing:
             if not self._label_timer.isActive():
                 self._label_timer.start()
