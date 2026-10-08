@@ -37,6 +37,11 @@ class StepSegment:
     step: int                           # +1 next, -1 previous
 
 
+@dataclass(frozen=True)
+class StepTime:
+    direction: int                      # +1 forward, -1 back, by the chosen time base's tick
+
+
 class ActionBus:
     """Synchronous publish/subscribe keyed by action type."""
 

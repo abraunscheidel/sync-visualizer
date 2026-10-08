@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
+from syncviz.core import RegularGrid
 from syncviz_app.views.base import View
 from syncviz_video.frame_index import FrameIndex
 from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
@@ -161,6 +162,9 @@ class VideoView(View):
 
     def extent(self):
         return 0.0, self.n_frames / self.fps
+
+    def time_base(self):
+        return RegularGrid(rate=self.fps, count=self.n_frames)        # one tick per video frame
 
     def refresh(self, time: float) -> None:
         n = int(round(time * self.fps))

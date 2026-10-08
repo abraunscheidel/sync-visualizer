@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QComboBox, QLabel, QToolBar
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLabel, QSpinBox, QToolBar
 
-from syncviz.core import SetPlaying, StepSegment
+from syncviz.core import FixedStep, SetPlaying, StepSegment, StepTime
+from syncviz.core.stepping import FIXED_INTERVAL
 from syncviz_app.context import AppContext
+from syncviz_app.keys import DEFAULT_KEYS
 
 SPEEDS = [0.1, 0.25, 0.5, 1.0, 2.0]
 TIME_LABEL_INTERVAL_MS = 50
@@ -15,15 +17,21 @@ ALL = "All"
 
 
 class ControlsBar(QToolBar):
-    def __init__(self, context: AppContext, filter_attributes: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        context: AppContext,
+        filter_attributes: list[str] | None = None,
+        keys: dict[str, str] | None = None,
+    ) -> None:
         super().__init__("Controls")
         self.context = context
+        self.keys = {**DEFAULT_KEYS, **(keys or {})}
         self.setMovable(False)
         tl = context.timeline
 
         self.play = QAction("Play", self)
         self.play.setCheckable(True)
-        self.play.setShortcut(QKeySequence("Space"))
+        self.play.setShortcut(QKeySequence(self.keys["play_pause"]))
         self.play.toggled.connect(lambda on: context.bus.publish(SetPlaying(on)))
         self.addAction(self.play)
 
@@ -31,10 +39,12 @@ class ControlsBar(QToolBar):
         if nav is not None:
             self.addSeparator()
             prev = QAction(f"◀ Previous {nav.label.lower()}", self)
-            prev.setShortcut(QKeySequence("Left"))
+            prev.setShortcut(QKeySequence(self.keys["previous_segment"]))
+            prev.setToolTip(f"Previous {nav.label.lower()} ({self.keys['previous_segment']})")
             prev.triggered.connect(lambda: context.bus.publish(StepSegment(-1)))
             nxt = QAction(f"Next {nav.label.lower()} ▶", self)
-            nxt.setShortcut(QKeySequence("Right"))
+            nxt.setShortcut(QKeySequence(self.keys["next_segment"]))
+            nxt.setToolTip(f"Next {nav.label.lower()} ({self.keys['next_segment']})")
             nxt.triggered.connect(lambda: context.bus.publish(StepSegment(+1)))
             self.addAction(prev)
             self.segment_label = QLabel()
@@ -150,3 +160,69 @@ class ControlsBar(QToolBar):
         except ValueError:
             # Unreachable from the UI, since options that match nothing are disabled.
             self.segment_label.setText(f"  no {nav.label.lower()} matches  ")
+
+
+class StepBar(QToolBar):
+    """Steps the playhead by one tick of a time base the user chooses.
+
+    A tick is the next frame or sample of a view's data (for example the video's frames), or a
+    fixed interval. Several views can offer a grid; the user picks which one defines the step.
+    """
+
+    def __init__(self, context: AppContext, keys: dict[str, str] | None = None) -> None:
+        super().__init__("Stepping")
+        self.context = context
+        stepper = context.stepper
+        keys = {**DEFAULT_KEYS, **(keys or {})}
+        self.setMovable(False)
+
+        back = QAction("◀ Step", self)
+        back.setShortcut(QKeySequence(keys["step_back"]))
+        back.setToolTip(f"Step back ({keys['step_back']})")
+        back.triggered.connect(lambda: context.bus.publish(StepTime(-1)))
+        forward = QAction("Step ▶", self)
+        forward.setShortcut(QKeySequence(keys["step_forward"]))
+        forward.setToolTip(f"Step forward ({keys['step_forward']})")
+        forward.triggered.connect(lambda: context.bus.publish(StepTime(+1)))
+
+        self.count = QSpinBox()
+        self.count.setRange(1, 100000)
+        self.count.setValue(stepper.count)
+        self.count.setPrefix("× ")
+        self.count.setToolTip("How many steps each press moves")
+        self.count.valueChanged.connect(lambda v: setattr(stepper, "count", v))
+
+        self.base = QComboBox()
+        for name in stepper.bases:
+            self.base.addItem(name)
+        self.base.setCurrentText(stepper.reference or "")
+        self.base.setToolTip("What one step means: the next frame or sample of this view's data, or a fixed interval")
+        self.base.currentTextChanged.connect(self._base_changed)
+
+        self.interval = QDoubleSpinBox()
+        self.interval.setRange(0.01, 600000.0)
+        self.interval.setDecimals(2)
+        self.interval.setSuffix(" ms")
+        fixed = stepper.bases.get(FIXED_INTERVAL)
+        self.interval.setValue(fixed.interval * 1000.0 if isinstance(fixed, FixedStep) else 10.0)
+        self.interval.valueChanged.connect(self._interval_changed)
+
+        # Spin boxes keep the keyboard once clicked, which would swallow the step shortcuts.
+        for box in (self.count, self.interval):
+            box.editingFinished.connect(box.clearFocus)
+
+        self.addAction(back)
+        self.addWidget(self.count)
+        self.addAction(forward)
+        self.addSeparator()
+        self.addWidget(QLabel("Step by: "))
+        self.addWidget(self.base)
+        self._interval_action = self.addWidget(self.interval)
+        self._interval_action.setVisible(self.base.currentText() == FIXED_INTERVAL)
+
+    def _base_changed(self, name: str) -> None:
+        self.context.stepper.reference = name
+        self._interval_action.setVisible(name == FIXED_INTERVAL)
+
+    def _interval_changed(self, milliseconds: float) -> None:
+        self.context.stepper.bases[FIXED_INTERVAL] = FixedStep(milliseconds / 1000.0)

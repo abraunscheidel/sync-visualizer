@@ -234,3 +234,57 @@ def test_gaps_smaller_than_a_pixel_are_closed_up_but_visible_ones_are_kept(windo
     assert len(merged) == 2
     assert merged[0][1] == pytest.approx(bar._x_of(2.0))
     assert merged[1][0] == pytest.approx(bar._x_of(2.0 + px * 5))
+
+
+# --- stepping --------------------------------------------------------------------------------
+
+def test_stepping_defaults_to_the_first_view_with_a_grid_and_lists_the_others(window):
+    stepper = window.context.stepper
+    assert stepper.reference == "Clip"                       # the video: first view with a time grid
+    assert list(stepper.bases) == ["Clip", "Angle", "Fixed interval"]
+    assert [window.step_bar.base.itemText(i) for i in range(window.step_bar.base.count())] == list(stepper.bases)
+
+
+def test_step_moves_by_one_video_frame_and_the_user_can_choose_another_definition(window):
+    from syncviz.core import StepTime
+    tl, bus, stepper = window.context.timeline, window.context.bus, window.context.stepper
+    bus.publish(Seek(1.0))
+
+    bus.publish(StepTime(+1))
+    assert tl.time == pytest.approx(1.0 + 1 / FPS)           # one frame of the 30 fps clip
+
+    window.step_bar.base.setCurrentText("Angle")             # the plot samples every 20 ms
+    bus.publish(StepTime(+1))
+    assert tl.time == pytest.approx(1.04)                    # the next sample ahead of 1.0333 s
+    assert stepper.reference == "Angle"
+
+
+def test_fixed_interval_and_count_are_adjustable_from_the_toolbar(window):
+    from syncviz.core import StepTime
+    tl, bus = window.context.timeline, window.context.bus
+    bar = window.step_bar
+    bar.base.setCurrentText("Fixed interval")
+    bar.interval.setValue(250.0)
+    bar.count.setValue(4)
+    bus.publish(Seek(2.0))
+
+    bus.publish(StepTime(+1))
+
+    assert tl.time == pytest.approx(3.0)                     # 4 steps of 250 ms
+
+
+def test_the_interval_box_only_shows_for_the_fixed_interval(window):
+    bar = window.step_bar
+    bar.base.setCurrentText("Clip")
+    assert not bar._interval_action.isVisible()
+    bar.base.setCurrentText("Fixed interval")
+    assert bar._interval_action.isVisible()
+
+
+def test_arrow_keys_stay_segment_navigation_and_shift_arrows_step(window):
+    from PySide6.QtGui import QKeySequence
+    shortcuts = {a.text(): a.shortcut().toString() for a in window.controls.actions() + window.step_bar.actions() if a.shortcut()}
+    assert shortcuts["Next block ▶"] == QKeySequence("Right").toString()
+    assert shortcuts["◀ Previous block"] == QKeySequence("Left").toString()
+    assert shortcuts["Step ▶"] == QKeySequence("Shift+Right").toString()
+    assert shortcuts["◀ Step"] == QKeySequence("Shift+Left").toString()

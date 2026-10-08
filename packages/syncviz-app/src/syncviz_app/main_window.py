@@ -13,7 +13,7 @@ from PySide6.QtCore import QElapsedTimer, QTimer, Qt
 from PySide6.QtWidgets import QDockWidget, QMainWindow, QVBoxLayout, QWidget
 
 from syncviz_app.context import AppContext
-from syncviz_app.controls import ControlsBar
+from syncviz_app.controls import ControlsBar, StepBar
 from syncviz_app.info_panel import InfoPanel
 from syncviz_app.project import Project
 from syncviz_app.refresh import PUMP_INTERVAL_S, RefreshScheduler
@@ -36,6 +36,11 @@ class MainWindow(QMainWindow):
             break
         self.controls = ControlsBar(context, filter_attrs)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.controls)
+        self.step_bar = None
+        if context.stepper is not None:
+            self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)       # a second row of controls
+            self.step_bar = StepBar(context)
+            self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.step_bar)
 
         self.info = InfoPanel(project, context)
         info_dock = QDockWidget("Project", self)

@@ -28,6 +28,12 @@ class View(QWidget):
         """Range of shared time this view has data for, or None if it has no time extent."""
         return None
 
+    def time_base(self):
+        """The grid of ticks this view's data naturally has (video frames, signal samples), as
+        a `syncviz.core.TimeBase`, or None if it has no such grid. Offered to the user as a
+        choice of what one "step" means."""
+        return None
+
     def coverage(self) -> list[tuple[float, float]]:
         """Runs of shared time in which this view has data. Defaults to its whole extent;
         views whose data has real dropouts report them so the timeline can show the gaps."""

@@ -28,6 +28,12 @@ segmentations:
     number_attribute: trial      # shown as the segment's number
     filters: [stimulus, outcome, choice, servo_position]
 
+# What one step of the playhead (Shift+Left / Shift+Right) means. Optional: without this the
+# toolbar starts on the first view that has a time grid, and the user can change it there.
+# Either name a view:  step: {view: Whisker video}   or a fixed interval:  step: {interval_ms: 25}
+step:
+  view: Whisker video
+
 # Panels in the views area. Which types exist depends on the installed plugins.
 views:
   - type: video

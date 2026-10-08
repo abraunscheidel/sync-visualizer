@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from syncviz.cache import DiskCache
-from syncviz.core import ActionBus, SegmentNavigator, Timeline
+from syncviz.core import ActionBus, SegmentNavigator, Stepper, Timeline
 from syncviz_app.project import ResourceStore
 
 
@@ -15,6 +15,7 @@ class AppContext:
     timeline: Timeline
     resources: ResourceStore
     navigator: SegmentNavigator | None = None
+    stepper: Stepper | None = None                       # what one "step" of the playhead means
     cache: DiskCache | None = None                       # where expensive derived results are kept
     # Extent of each view's data in shared time, by view title. All sources are equal:
     # the timeline spans the union of these, and no source defines time zero.

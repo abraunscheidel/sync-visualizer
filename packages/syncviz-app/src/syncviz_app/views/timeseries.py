@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 
+from syncviz.core import SampleTimes
 from syncviz_app.views.timewindow import TimeWindowView, break_at_gaps
 
 
@@ -32,6 +33,9 @@ class TimeSeriesView(TimeWindowView):
 
     def coverage(self):
         return [(float(a), float(b)) for a, b in self.series.coverage()]
+
+    def time_base(self):
+        return SampleTimes(self.series.times) if len(self.series) else None
 
     def refresh(self, time: float) -> None:
         lo, hi = self.set_window(time)

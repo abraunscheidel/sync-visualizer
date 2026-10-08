@@ -938,6 +938,34 @@ SelectInterval(10s, 15s)
 
 This keeps UI implementation separate from application semantics.
 
+### 23.1 Stepping and keyboard shortcuts
+
+Two different kinds of "step" exist, and neither is special to any one experiment:
+
+- **Segment navigation** moves between segments (trials, epochs, ...). Left and Right
+  arrow.
+- **Time stepping** moves the playhead by one *tick* of a time base. Shift+Left and
+  Shift+Right, or the Step buttons. The less common action of a pair takes Shift.
+
+**What a tick is is chosen by the user, not assumed.** Any view with a natural grid of
+times can offer it: a video its frames, a signal its samples. The toolbar's "Step by"
+selector lists every view that offers one, plus a fixed interval. The first one is only
+the starting choice; a project can name another (`step: {view: ...}` or
+`step: {interval_ms: ...}`). A step goes to the next tick of the chosen grid, not a fixed
+distance, so from between frames it snaps to the next frame, and for irregular data it
+follows the real sample times. A step count (x N) repeats the step. Stepping pauses
+playback.
+
+The choice matters: starting just before a tracking dropout, stepping by the video
+advances frame by frame, while stepping by the tracked whisker signal jumps across the
+dropout to its next sample.
+
+**Shortcuts are defined in one table** (`keys.py`) so that configurable shortcuts, in a
+project file or a settings dialog, can be added later by passing a different table.
+Shortcuts are shown in the tooltips of the buttons they trigger. Spin boxes in the
+toolbar give up keyboard focus when editing finishes, because a focused text field
+would otherwise swallow the arrow keys.
+
 ---
 
 ## 24. Cross-View Interaction
