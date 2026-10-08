@@ -8,6 +8,7 @@ from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL, Shifted
 from syncviz_app.inspector import Inspector
+from syncviz_app.segmentation import segments
 from syncviz_app.keys import DEFAULT_KEYS
 from syncviz_app.commands import CommandRegistry
 from syncviz_app.context import AppContext
@@ -46,7 +47,7 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():
-        intervals = project.resources.intervals(spec["from"])
+        intervals = segments(project.segmentation_specs, name, project.resources, context.notes)
         context.navigator = SegmentNavigator(
             bus, intervals, label=spec.get("label", "Segment"), index_attribute=spec.get("number_attribute"),
             label_plural=spec.get("label_plural"),

@@ -2386,9 +2386,21 @@ a point on a derived plot resolves back to times and targets. The sync diagnosti
 An epoch "contains" an event when it overlaps the epoch's window; the window is configurable. Event-based filters are defined
 in the project first; a command to make windows from a selected event comes second.
 
+**Epochs: built.** `syncviz/epochs.py` (pure functions) and `syncviz_app/segmentation.py` (builds the project's segmentations
+for a recording, cached). A segmentation can have `measures:` (an attribute worked out from the events or intervals that fall
+in each segment, as a count or as presence with two labels, edge overlap/start/stop; a measure whose data is missing in a
+recording is skipped with a note), so "trials where whisker C0 touched" is an ordinary filter. A segmentation can instead have
+`derive:` (a window `before_ms`/`after_ms` around each event or interval edge, `within:` another segmentation; windows are clipped
+to it, take its attributes, merge when they overlap, and say how many events each holds). Derived segmentations confine
+movement to their windows by default (`confine:`), so the timeline is limited to the clips. A toolbar dropdown chooses which
+segmentation to navigate (saved in the workspace under the filters); the playhead stays where it is if it falls in one of the
+new segments, else moves to the nearest. A collection that cannot make the chosen segmentation falls back to the first.
+YAML note: unquoted `yes`/`no` are read as true/false, so measure labels are checked and the error says to quote them.
+Not yet: the removable chips and Back for restrictions; windows whose size depends on the event.
+
 **Planned work, in order.** Do not lose track of these.
 
-1. Epochs: derived segmentations with inherited attributes, per-epoch measures, and the chips for restrictions.
+1. ~~Epochs~~ (built, see above), except the chips for restrictions.
 2. Groups.
 3. Aggregation views over groups and epochs.
 4. The data-health report.

@@ -126,6 +126,19 @@ class ResourceStore:
 
         return self._get(key, build)
 
+    def cached(self, key: tuple, load):
+        """`load()`, done once per key for this recording."""
+        return self._get(("cached",) + key, load)
+
+    def events_or_intervals(self, ref: str, member: str | None = None):
+        """What `ref` holds, as an `EventSeries` or an `IntervalSeries`, whichever the source says it is."""
+        name, path = split_ref(ref)
+        source = self.source(name)
+        kind = self._get(("kind", ref), lambda: next((e.kind for e in source.catalog() if e.path == path), None))
+        if kind == "intervals":
+            return self.intervals(ref)
+        return self.events(ref, member)
+
     def intervals(self, ref: str) -> IntervalSeries:
         name, path = split_ref(ref)
         source = self.source(name)

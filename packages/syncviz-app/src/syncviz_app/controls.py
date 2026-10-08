@@ -134,6 +134,9 @@ class NavigationBar(QToolBar):
 
     def _update_segment_label(self) -> None:
         nav = self.context.navigator
+        noun = nav.label.lower()
+        self.previous_segment.setToolTip(f"Previous {noun} ({self.keys['previous_segment']})")
+        self.next_segment.setToolTip(f"Next {noun} ({self.keys['next_segment']})")
         text = f"  {nav.label} {nav.number}   ({nav.position + 1} of {nav.count})"
         if nav.filtered and not nav.matches:
             text += "   not in filter"            # only possible while movement is not restricted to matches
@@ -232,38 +235,37 @@ class NavigationBar(QToolBar):
 class FilterBar(QToolBar):
     """Which segments are shown, how many match, and whether playback skips the rest."""
 
-    def __init__(self, context: AppContext, filter_attributes: list[str] | None = None) -> None:
+    def __init__(self, context: AppContext, filter_attributes: list[str] | None = None,
+                 segmentations: dict[str, dict] | None = None, active: str | None = None) -> None:
+        """`segmentations` (name to `{label, plural, filters}`) lets the user choose which segmentation to navigate, when
+        there is more than one; each brings its own filters. Without it, `filter_attributes` are the only filters."""
         super().__init__("Filters")
         self.context = context
         self.setMovable(False)
         nav = context.navigator
         noun = nav.plural.lower()
+        self.segmentations = segmentations or {}
+        self.active = active
+        self.on_segmentation = None                   # set by the window: called with a name; returns whether it switched
+        self._filters_of = {name: list(info.get("filters", [])) for name, info in self.segmentations.items()}
 
         self.addWidget(_caption("Filter"))
+        self.segmentation = None
+        if len(self.segmentations) > 1:
+            self.segmentation = saved_in_workspace(QComboBox())
+            self.segmentation.setToolTip("Which segments to move between: the project's own, or windows cut around events")
+            for name, info in self.segmentations.items():
+                self.segmentation.addItem(info.get("plural") or f"{info.get('label', name)}s", name)
+            self.segmentation.setCurrentIndex(max(self.segmentation.findData(active), 0))
+            self.segmentation.activated.connect(self._segmentation_chosen)
+            self.addWidget(self.segmentation)
+        self._anchor = self.addSeparator()            # the filters are placed before this
         self._filters: dict[str, QComboBox] = {}
-        for attribute in filter_attributes or []:
-            if attribute not in nav.intervals.attributes:
-                context.notes.append(f"filter {attribute!r} is not an attribute of the segments; ignored")
-                continue
-            box = saved_in_workspace(QComboBox())
-            box.addItem(ALL, None)
-            for value in nav.intervals.unique(attribute):
-                box.addItem(str(value), value)
-            label = QLabel(f"  {attribute}: ")
-            tip = context.explain(attribute, nav.intervals.descriptions.get(attribute, ""))
-            if tip:
-                label.setToolTip(tip)
-                box.setToolTip(tip)
-            self.addWidget(label)
-            self.addWidget(box)
-            self._filters[attribute] = box
-        self._refresh_options()                       # counts in the option text; dead ends disabled
-        for box in self._filters.values():
-            box.currentIndexChanged.connect(self._filters_changed)
+        self._filter_actions: list = []
+        self._install_filters(filter_attributes if active is None else self._filters_of.get(active, []))
 
         self.match_label = QLabel()
         self.match_label.setMinimumWidth(110)
-        self.addSeparator()
         self.addWidget(self.match_label)
 
         # The filter says which segments match; this decides whether moving is restricted to them.
@@ -282,14 +284,71 @@ class FilterBar(QToolBar):
         self._update_match_label()
         self._defaults = self.state()
 
+    def _install_filters(self, attributes: list[str]) -> None:
+        """One dropdown for each attribute of the current segments, placed before the match count."""
+        context, nav = self.context, self.context.navigator
+        for attribute in attributes or []:
+            if attribute not in nav.intervals.attributes:
+                context.notes.append(f"filter {attribute!r} is not an attribute of the segments; ignored")
+                continue
+            box = saved_in_workspace(QComboBox())
+            box.addItem(ALL, None)
+            for value in nav.intervals.unique(attribute):
+                box.addItem(str(value), value)
+            label = QLabel(f"  {attribute}: ")
+            tip = context.explain(attribute, nav.intervals.descriptions.get(attribute, ""))
+            if tip:
+                label.setToolTip(tip)
+                box.setToolTip(tip)
+            self._filter_actions.append(self.insertWidget(self._anchor, label))
+            self._filter_actions.append(self.insertWidget(self._anchor, box))
+            self._filters[attribute] = box
+        self._refresh_options()                       # counts in the option text; dead ends disabled
+        for box in self._filters.values():
+            box.currentIndexChanged.connect(self._filters_changed)
+
+    def show_segmentation(self, name: str) -> None:
+        """The window now navigates segmentation `name`: replace the filters with that segmentation's own."""
+        self.active = name
+        for action in self._filter_actions:
+            widget = self.widgetForAction(action)
+            self.removeAction(action)
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._filter_actions, self._filters = [], {}
+        self._install_filters(self._filters_of.get(name, []))
+        if self.segmentation is not None:
+            self.segmentation.blockSignals(True)
+            self.segmentation.setCurrentIndex(max(self.segmentation.findData(name), 0))
+            self.segmentation.blockSignals(False)
+        nav = self.context.navigator
+        self.skip.setText(f"Skip non-matching {nav.plural.lower()}")
+        self._update_match_label()
+        self._defaults = self.state()
+
+    def _segmentation_chosen(self, row: int) -> None:
+        name = self.segmentation.itemData(row)
+        if self.on_segmentation is None or not self.on_segmentation(name):
+            self.segmentation.blockSignals(True)      # it could not switch: show what is still in use
+            self.segmentation.setCurrentIndex(max(self.segmentation.findData(self.active), 0))
+            self.segmentation.blockSignals(False)
+
     # -- saved state ---------------------------------------------------------------------
     def state(self) -> dict:
-        """Which value each filter has (None = all) and whether movement skips what they hide."""
-        return {"filters": {a: _plain(box.currentData()) for a, box in self._filters.items()},
-                "skip": self.skip.isChecked()}
+        """Which segmentation, which value each filter has (None = all) and whether movement skips what they hide."""
+        out = {"filters": {a: _plain(box.currentData()) for a, box in self._filters.items()},
+               "skip": self.skip.isChecked()}
+        if self.segmentation is not None:
+            out["segmentation"] = self.active
+        return out
 
     def apply_state(self, state: dict) -> None:
         """Set the filters from saved settings; anything missing returns to how the bar started."""
+        wanted_segmentation = state.get("segmentation")
+        if (self.segmentation is not None and wanted_segmentation in self.segmentations and wanted_segmentation != self.active
+                and self.on_segmentation is not None):
+            self.on_segmentation(wanted_segmentation)
         filters = {**self._defaults["filters"], **state.get("filters", {})}
         self.skip.setChecked(bool(state.get("skip", self._defaults["skip"])))
         for attribute, box in self._filters.items():

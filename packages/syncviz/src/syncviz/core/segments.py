@@ -46,6 +46,7 @@ class SegmentNavigator:
         self.plural = label_plural or f"{label}s"  # for irregular plurals ("Stimulus" -> "Stimuli") set it in the config
         self.index_attribute = index_attribute     # attribute shown as the segment's number
         self._skip_hidden = True
+        self.confine = False                       # keep movement inside the segments even when no filter is set (windows)
         self._all = range(len(intervals))
         self._observers: list[Callable[[SegmentNavigator], None]] = []
         self._timeline = None                      # set by follow()
@@ -143,7 +144,7 @@ class SegmentNavigator:
     @property
     def restricting(self) -> bool:
         """Whether the playhead is currently kept inside the matching segments."""
-        return self._skip_hidden and self.filtered
+        return self._skip_hidden and (self.filtered or self.confine)
 
     def allows(self, time: float) -> bool:
         """Whether the playhead may be at `time`: anywhere when not restricting, otherwise only
@@ -179,12 +180,42 @@ class SegmentNavigator:
             self.bus.publish(SelectTimeRange(*self.bounds))
             self._notify()
 
-    def replace_intervals(self, intervals: IntervalSeries) -> None:
+    def _rename(self, label: str | None, plural: str | None, index_attribute: str | None, confine: bool = False) -> None:
+        self.confine = confine
+        if label is not None:
+            self.label = label
+            self.plural = plural or f"{label}s"
+            self.index_attribute = index_attribute
+
+    def replace_segments(self, intervals: IntervalSeries, label: str | None = None, plural: str | None = None,
+                         index_attribute: str | None = None, confine: bool = False) -> None:
+        """Navigate a different segmentation of the same recording (trials, then windows around contacts). The playhead
+        stays where it is if it falls in one of the new segments, else moves to the nearest one ahead (or the last). The
+        filter is cleared, since its choices belonged to the old segments."""
+        if len(intervals) == 0:
+            raise ValueError("cannot navigate an empty interval series")
+        reference = self._reference_time()
+        self._rename(label, plural, index_attribute, confine)
+        self.intervals = intervals
+        self._all = range(len(intervals))
+        self._set_visible(list(self._all))
+        here = intervals.index_at(reference)
+        if here is None:
+            self._current = 0
+            self._move_to_next_match(reference)
+        else:
+            self._current = here
+            self.bus.publish(SelectTimeRange(*self.bounds))
+            self._notify()
+
+    def replace_intervals(self, intervals: IntervalSeries, label: str | None = None, plural: str | None = None,
+                          index_attribute: str | None = None, confine: bool = False) -> None:
         """Navigate a different set of segments (another collection's), starting at its first one.
         The filter is cleared, since its choices belonged to the old segments; whether movement is
         restricted to matches is kept."""
         if len(intervals) == 0:
             raise ValueError("cannot navigate an empty interval series")
+        self._rename(label, plural, index_attribute, confine)
         self.intervals = intervals
         self._all = range(len(intervals))
         self._set_visible(list(self._all))

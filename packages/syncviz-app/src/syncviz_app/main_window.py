@@ -14,6 +14,7 @@ from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
 from syncviz import plugins
 from syncviz_app.details_panel import DetailsPanel
 from syncviz_app.commands import Command
+from syncviz_app.segmentation import segments
 from syncviz_app.loading import LoadingScreen, run_in_background
 from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
@@ -66,6 +67,7 @@ class MainWindow(QMainWindow):
         # Rows, outermost scope first: which collection (only if the project has several); playback and the
         # ways of moving (by segment, by frame); then the segment filters.
         self.collection_bar = None
+        self.active_segmentation: str | None = None             # which of the project's segmentations is being navigated
         if project.multiple:
             self.collection_bar = CollectionBar(self)
             self.collection_bar.setObjectName("collections")
@@ -77,7 +79,11 @@ class MainWindow(QMainWindow):
         self.filter_bar = None
         if context.navigator is not None:
             self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
-            self.filter_bar = FilterBar(context, filter_attrs)
+            infos = {name: {"label": spec.get("label", name), "plural": spec.get("label_plural"),
+                            "filters": spec.get("filters", [])} for name, spec in project.segmentation_specs.items()}
+            self.active_segmentation = next(iter(infos))
+            self.filter_bar = FilterBar(context, filter_attrs, infos, self.active_segmentation)
+            self.filter_bar.on_segmentation = self.set_segmentation
             self.filter_bar.setObjectName("filters")
             self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.filter_bar)
 
@@ -368,14 +374,22 @@ class MainWindow(QMainWindow):
     def _switch_collection(self, index: int) -> bool:
         project, context = self.project, self.context
         resources = intervals = None
+        segment_notes: list[str] = []
+        chosen = [self.active_segmentation]
         try:
             def open_files():
                 opened = project.open_collection(index)
                 try:
                     found = None
                     if context.navigator is not None:
-                        spec = next(iter(project.segmentation_specs.values()))
-                        found = opened.intervals(spec["from"])
+                        name = self.active_segmentation
+                        try:
+                            found = segments(project.segmentation_specs, name, opened, segment_notes)
+                        except Exception as exc:                  # this recording lacks what the segmentation needs
+                            name = next(iter(project.segmentation_specs))
+                            segment_notes.append(f"{self.active_segmentation}: {exc}; using {name}")
+                            found = segments(project.segmentation_specs, name, opened, segment_notes)
+                        chosen[0] = name
                     return opened, found
                 except BaseException:
                     opened.close()
@@ -397,9 +411,16 @@ class MainWindow(QMainWindow):
         context.resources, context.collection = resources, project.collection
         previous.close()
         context.notes.clear()
+        context.notes.extend(segment_notes)
         if intervals is not None:
-            context.navigator.replace_intervals(intervals)
-            self.filter_bar.repopulate()
+            spec = project.segmentation_specs[chosen[0]]
+            context.navigator.replace_intervals(intervals, spec.get("label", "Segment"), spec.get("label_plural"),
+                                                spec.get("number_attribute"), bool(spec.get("confine", "derive" in spec)))
+            self.active_segmentation = chosen[0]
+            if self.filter_bar.active != chosen[0]:
+                self.filter_bar.show_segmentation(chosen[0])
+            else:
+                self.filter_bar.repopulate()
         self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)), self.loading.progress)
         self.loading.progress("Arranging the window…")
         self._apply_lags(dict(self._lags))
@@ -410,6 +431,30 @@ class MainWindow(QMainWindow):
         self.sync.load_cached()
         if self.collection_bar is not None:
             self.collection_bar.set_active(index)
+        return True
+
+    def set_segmentation(self, name: str) -> bool:
+        """Navigate another of the project's segmentations (for example windows around each contact instead of trials).
+        The playhead stays where it is when it falls in one of the new segments. If it cannot be built, nothing changes."""
+        project, context = self.project, self.context
+        if name == self.active_segmentation:
+            return True
+        if name not in project.segmentation_specs or context.navigator is None:
+            return False
+        notes: list[str] = []
+        try:
+            intervals = segments(project.segmentation_specs, name, context.resources, notes)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Could not open {project.segmentation_specs[name].get('label', name)}: {exc}", 10000)
+            return False
+        spec = project.segmentation_specs[name]
+        context.navigator.replace_segments(intervals, spec.get("label", "Segment"), spec.get("label_plural"),
+                                           spec.get("number_attribute"), bool(spec.get("confine", "derive" in spec)))
+        context.navigator.skip_hidden = bool(spec.get("skip_filtered", True))
+        self.active_segmentation = name
+        context.notes.extend(notes)
+        if self.filter_bar is not None:
+            self.filter_bar.show_segmentation(name)
         return True
 
     def switch_workspace(self, name: str) -> bool:

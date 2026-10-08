@@ -49,6 +49,33 @@ segmentations:
     label: Trial               # the name shown for each item; add `label_plural:` if "+s" is wrong
     from: session:intervals/trials
     number_attribute: trial      # shown as the segment's number
+    filters: [stimulus, outcome, choice, servo_position, "Touched by C0", "Touched by C1", "Touched by C2", "Touched by C3"]
+    measures:                    # what happens inside each trial, as attributes to filter by
+      "Touched by C0": {from: "session:processing/behavior/contacts_by_whisker_C0", as: presence, labels: [no touch, touch]}
+      "Touched by C1": {from: "session:processing/behavior/contacts_by_whisker_C1", as: presence, labels: [no touch, touch]}
+      "Touched by C2": {from: "session:processing/behavior/contacts_by_whisker_C2", as: presence, labels: [no touch, touch]}
+      "Touched by C3": {from: "session:processing/behavior/contacts_by_whisker_C3", as: presence, labels: [no touch, touch]}
+  # Windows cut around events: 500 ms either side of the start of every touch, inside the trial it falls in. They take the
+  # trial's attributes, and movement stays inside them. Choose between these and trials in the toolbar.
+  touches_c0:
+    label: "C0 touch"
+    label_plural: "C0 touches"
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C0", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    filters: [stimulus, outcome, choice, servo_position]
+  touches_c1:
+    label: "C1 touch"
+    label_plural: "C1 touches"
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C1", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    filters: [stimulus, outcome, choice, servo_position]
+  touches_c2:
+    label: "C2 touch"
+    label_plural: "C2 touches"
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C2", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    filters: [stimulus, outcome, choice, servo_position]
+  touches_c3:
+    label: "C3 touch"
+    label_plural: "C3 touches"
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C3", edge: start, before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus, outcome, choice, servo_position]
 
 # Notes on how to read a field, shown as tooltips next to the description the data file itself gives. Keys are the names
@@ -63,6 +90,10 @@ glossary:
   Reward left: "A drop of water was delivered at the left spout."
   Contact C0: "A touch of the object by whisker C0. Start and end are the dataset authors' definition, taken from the tracking."
   Contact C1: "A touch of the object by whisker C1. Start and end are the dataset authors' definition, taken from the tracking."
+  "Touched by C0": "Whether whisker C0 touched the object at any time during the trial (the dataset authors' contact definition)."
+  "Touched by C1": "Whether whisker C1 touched the object at any time during the trial (the dataset authors' contact definition)."
+  "Touched by C2": "Whether whisker C2 touched the object at any time during the trial (the dataset authors' contact definition)."
+  "Touched by C3": "Whether whisker C3 touched the object at any time during the trial (the dataset authors' contact definition)."
   Whiskers: "The four tracked whiskers, C0 to C3. Each is followed by eight points from the tip to the base."
   Contacts: "Touches of the object, as a badge for when each happens and a ring for where on the picture."
   Licks and rewards: "Tongue contacts with the spouts, and water deliveries."
