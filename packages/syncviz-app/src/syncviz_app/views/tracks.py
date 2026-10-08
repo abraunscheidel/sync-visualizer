@@ -38,10 +38,23 @@ class TracksView(TimeWindowView):
                 item = self.plot.plot(pen=pg.mkPen(colour, width=BAR_WIDTH_PX, cap=pg.QtCore.Qt.PenCapStyle.FlatCap),
                                       connect="pairs")
             self.rows.append({"name": row.get("name", ""), "kind": kind, "y": y, "data": data, "item": item, "spec": row})
+        self.band = pg.LinearRegionItem(values=(0, 0), orientation="horizontal", movable=False,
+                                        brush=pg.mkBrush(224, 160, 48, 50), pen=pg.mkPen(None))
+        self.band.setZValue(-10)
+        self.band.hide()
+        self.plot.addItem(self.band, ignoreBounds=True)
         self.plot.setYRange(-0.7, n - 0.3, padding=0)
         self.plot.getAxis("left").setTicks([[(r["y"], r["name"]) for r in self.rows]])
         self.plot.getAxis("left").setWidth(110)
         self.enable_hover(self.plot.viewport())
+
+    def selection_changed(self) -> None:
+        row = next((r for r in self.rows if self.is_selected(row_target(r["spec"]))), None)
+        if row is None:
+            self.band.hide()
+        else:
+            self.band.setRegion((row["y"] - 0.5, row["y"] + 0.5))
+            self.band.show()
 
     def target_at(self, pos):
         """The row under the pointer; for an events row, the event itself when the pointer is within a few pixels of it."""

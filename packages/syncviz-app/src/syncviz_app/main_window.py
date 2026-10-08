@@ -11,6 +11,7 @@ import time
 
 from PySide6.QtGui import QKeySequence
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
+from syncviz_app.details_panel import DetailsPanel
 from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
 from syncviz_app.context import AppContext
@@ -89,6 +90,13 @@ class MainWindow(QMainWindow):
         info_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)   # always present
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, info_dock)
 
+        self.details_panel = DetailsPanel(context)
+        details_dock = QDockWidget("Details", self)
+        details_dock.setWidget(self.details_panel)
+        details_dock.setObjectName("details")
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)
+        self.details_dock = details_dock
+
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
         self.view_host.setWindowFlags(Qt.WindowType.Widget)
         self.view_host.setDockNestingEnabled(True)
@@ -164,6 +172,7 @@ class MainWindow(QMainWindow):
         """The working state apart from the arrangement: filters, frame step and speed."""
         out = {"navigation": self.navigation.state(), "view_lags": dict(self._lags),
                "view_settings": {t: dict(v) for t, v in self._view_settings.items()}}
+        out["inspection"] = self.details_panel.state()
         if self.filter_bar is not None:
             out["filters"] = self.filter_bar.state()
         if self.collection_bar is not None:
@@ -218,6 +227,7 @@ class MainWindow(QMainWindow):
         self._apply_lags(settings.get("view_lags", {}))
         self._apply_view_settings(settings.get("view_settings", {}))
         self.navigation.apply_state(settings.get("navigation", {}))
+        self.details_panel.apply_state(settings.get("inspection", {}))
         if self.filter_bar is not None:
             self.filter_bar.apply_state(settings.get("filters", {}))
         if self.collection_bar is not None:

@@ -71,6 +71,22 @@ class View(QWidget):
         # It changes only what this view draws, never the data or the timeline.
         self.lag: float = 0.0
         self.refresh_hz: float = float(spec.get("refresh_hz", self.default_refresh_hz))
+        context.selection.subscribe(lambda _target: self.selection_changed())
+
+    def selection_changed(self) -> None:
+        """The shared selection changed; a view that can show which of its items is selected redraws that."""
+
+    def select_at(self, pos: QPoint) -> bool:
+        """Select whatever is under `pos` (this view's coordinates). Returns whether there was something. Selecting never
+        moves time or playback (design doc 28.7)."""
+        target = self.target_at(pos)
+        if target is None:
+            return False
+        self.context.selection.set(target)
+        return True
+
+    def is_selected(self, target: Target | None) -> bool:
+        return self.context.selection.is_selected(target)
 
     def settings(self) -> list[ViewSetting]:
         """The settings this view offers (none by default)."""

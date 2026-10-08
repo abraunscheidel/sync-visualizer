@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from syncviz.cache import DiskCache
 from syncviz.catalog import Collection
+from syncviz.inspection import Selection
 from syncviz.core import ActionBus, SegmentNavigator, Stepper, Timeline
 from syncviz_app.project import ResourceStore
 
@@ -36,6 +37,7 @@ class AppContext:
     collection_label: str = "Collection"                # what the project calls one ("Session")
     glossary: dict[str, str] = field(default_factory=dict)   # the project's notes on how to read a field, by its name
     notes: list[str] = field(default_factory=list)       # plain factual remarks about the data
+    selection: Selection = field(default_factory=Selection)   # the one item the user has selected
     inspector: object = None                              # an Inspector: the details of what a view points at
 
     def explain(self, term: str, described: str = "") -> str:

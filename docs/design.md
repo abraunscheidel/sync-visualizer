@@ -2282,11 +2282,14 @@ action, never hardcoded in the core. The ideas in 16.2 become ordinary actions r
 * Views return targets only; they never format details. The core presents what the source supplies.
 * Operational information (sync diagnostics) stays a core component and is not mixed into details.
 
-**Status.** Step 1 is built: `syncviz/inspection.py` (Target, Scope, Field, Details and the statistics by resource type),
-`syncviz_app/inspector.py` (turns a target into details over the current segment), `View.target_at` and hover on the
-indicator lights, the tracks view (an event under the pointer gives its time) and the time series view. Not yet: hover on
-the video overlays, the user's choice of which brief figures show (needs the shared checklist saved in the workspace),
-and everything in steps 2 to 4.
+**Status.** Steps 1 and 2 are built. Step 1: `syncviz/inspection.py` (Target, Scope, Field, Details, statistics by resource
+type), `syncviz_app/inspector.py`, `View.target_at` and hover on the indicator lights, the tracks view and the time series
+view. Step 2: `Selection` (one shared item), left click selects (tile outlined, row band, thicker line) and a double click
+seeks, the docked Details panel (`details_panel.py`) with every field and a per-figure "On hover" tick saved in the
+workspace (`settings.inspection.hover`), and the optional `Source.details(target)` hook for facts only a data format knows.
+Where a click lands on nothing selectable it still seeks. Backlog: hover and selection on the video overlays; hover and
+selection for processed series such as the population rate (needs its own design: they have no source reference);
+the unified action registry and context menu (step 3); selection-bound and temporary views (step 4).
 
 **Order of building.** (1) target and details contract, with hover on the existing views; (2) selection and the detail panel;
 (3) actions and the context menu; (4) selection-bound and temporary views.

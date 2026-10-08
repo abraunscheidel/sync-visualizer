@@ -83,6 +83,9 @@ def test_clicking_a_shifted_plot_seeks_to_the_playhead_time_not_the_views_own(wi
         def scenePos(self):
             return point
 
+        def double(self):
+            return True                      # a double click seeks; a single click selects (design doc 28.7)
+
     angle._clicked(Click())
     assert window.context.timeline.time == pytest.approx(2.5, abs=0.05)   # 2.0 + the 0.5 s lag
 

@@ -62,6 +62,9 @@ class TimeSeriesView(TimeWindowView):
     def target_at(self, pos):
         return self.target
 
+    def selection_changed(self) -> None:
+        self.curve.setPen(pg.mkPen("#4fa3e0", width=3 if self.is_selected(self.target) else 1.5))
+
     def extent(self):
         if len(self.series) == 0:
             return None

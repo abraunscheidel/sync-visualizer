@@ -53,7 +53,10 @@ class TimeWindowView(View):
         viewbox = self.plot.getPlotItem().vb
         if not viewbox.sceneBoundingRect().contains(event.scenePos()):
             return
+        # A click selects what is under it; where there is nothing to select, or on a double click, it seeks.
         # The click is in this view's time; the playhead is `lag` later.
+        if not event.double() and self.select_at(self.plot.mapTo(self, self.plot.mapFromScene(event.scenePos()))):
+            return
         self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()) + self.lag)
 
     def seek_from_time(self, time: float) -> bool:

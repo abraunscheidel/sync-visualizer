@@ -27,6 +27,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] If it has a natural grid of ticks, implement `time_base()` so it can define a frame.
 - [ ] If it can wait on slow work, implement `stalled_for(now)` (§34.3) and show one calm message over itself.
 - [ ] If it has user settings, decide whether they belong in the workspace (as above).
+- [ ] If it shows data the user might point at, implement `target_at(pos)` (return a `Target`, never format details yourself),
+  call `enable_hover(...)` on the widget that draws it, and `selection_changed()` to show which item is selected (§28.7).
 
 ## Anything that holds state about the open recording
 

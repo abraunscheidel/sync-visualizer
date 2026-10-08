@@ -16,6 +16,7 @@ class Inspector:
     def __init__(self, context: AppContext) -> None:
         self.context = context
         self._catalogs: dict[str, list] = {}
+        self.hover_keys: set[str] | None = None            # which figures a hover shows; None = each statistic's default
 
     def scope(self) -> Scope:
         nav = self.context.navigator
@@ -49,11 +50,21 @@ class Inspector:
                 details.fields = interval_fields(resources.intervals(target.ref), scope)
             elif target.kind == "timeseries":
                 details.fields = timeseries_fields(resources.timeseries(target.ref, target.member), scope)
+            details.fields += self._from_source(target)
         except MissingDataError:
             details.fields = [Field("Data", "not available in this recording", brief=True)]
         if target.time is not None:
             details.fields.insert(0, Field("At", f"{target.time:.4f} s", brief=True))
         return details
+
+    def _from_source(self, target: Target) -> list[Field]:
+        try:
+            return list(self.context.resources.source(target.source).details(target))
+        except MissingDataError:
+            return []
+
+    def shown_on_hover(self, field: Field) -> bool:
+        return field.brief if self.hover_keys is None else field.key in self.hover_keys
 
     def hover_text(self, target: Target) -> str:
         """The tooltip: title, description, and the brief statistics."""
@@ -61,7 +72,7 @@ class Inspector:
         lines = [details.title]
         if details.description:
             lines += ["", details.description]
-        brief = details.brief()
+        brief = [f for f in details.fields if self.shown_on_hover(f)]
         if brief:
             lines.append("")
             lines += [f"{f.name}: {f.value}" for f in brief]

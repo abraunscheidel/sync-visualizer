@@ -35,6 +35,8 @@ class _Lamps(QWidget):
         self.labels = labels
         self.columns = None if columns is None else max(int(columns), 1)     # None: pick the best fit
         self.levels = np.zeros(len(labels))
+        self.selected: int | None = None                  # the tile of the selected item, outlined
+        self.on_press = None                              # called with a point; the view selects what is there
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(120, 60)
 
@@ -62,6 +64,15 @@ class _Lamps(QWidget):
         return [QRectF((i // rows) * w, (i % rows) * h, w, h).adjusted(GAP / 2, GAP / 2, -GAP / 2, -GAP / 2)
                 for i in range(len(self.labels))]
 
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.on_press is not None:
+            self.on_press(event.position().toPoint())
+
+    def set_selected(self, index: int | None) -> None:
+        if index != self.selected:
+            self.selected = index
+            self.update()
+
     def set_levels(self, levels: np.ndarray) -> None:
         if not np.array_equal(levels, self.levels):
             self.levels = levels
@@ -73,7 +84,7 @@ class _Lamps(QWidget):
         pal = self.palette()
         dark, bright = pal.color(pal.ColorRole.WindowText), pal.color(pal.ColorRole.HighlightedText)
         lit = pal.color(pal.ColorRole.Highlight)
-        for rect, label, level in zip(self.tile_rects(), self.labels, self.levels):
+        for i, (rect, label, level) in enumerate(zip(self.tile_rects(), self.labels, self.levels)):
             level = float(level)
             fill = QColor(lit)
             fill.setAlpha(int(UNLIT_ALPHA + (LIT_ALPHA - UNLIT_ALPHA) * level))
@@ -82,6 +93,10 @@ class _Lamps(QWidget):
             p.setPen(QPen(outline, 1))
             p.setBrush(fill)
             p.drawRoundedRect(rect, 6, 6)
+            if i == self.selected:
+                p.setPen(QPen(lit.lighter(130), 3))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 6, 6)
             # The label turns from the normal text colour to the highlighted-text colour as the tile lights.
             p.setPen(QColor(int(dark.red() + (bright.red() - dark.red()) * level),
                             int(dark.green() + (bright.green() - dark.green()) * level),
@@ -118,6 +133,10 @@ class IndicatorsView(View):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.lamps)
         self.enable_hover(self.lamps)
+        self.lamps.on_press = lambda point: self.select_at(self.lamps.mapTo(self, point))
+
+    def selection_changed(self) -> None:
+        self.lamps.set_selected(next((i for i, row in enumerate(self.rows) if self.is_selected(row_target(row["spec"]))), None))
 
     def target_at(self, pos):
         point = self.lamps.mapFrom(self, pos)

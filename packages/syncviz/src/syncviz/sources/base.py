@@ -52,6 +52,12 @@ class Source(ABC):
         frames are evenly spaced). Checks that compare sources belong to the project's `sync` section instead."""
         return []
 
+    def details(self, target) -> list:
+        """Extra facts this source knows about `target` (a `syncviz.inspection.Target` in this source), as
+        `syncviz.inspection.Field`s, for the details panel. Facts any source can give from the data alone (counts, rates)
+        and the metadata attached to a resource are shown without this; it is for what only this data format knows."""
+        return []
+
     def close(self) -> None:
         """Release files held open for lazy reading. Safe to call more than once."""
 

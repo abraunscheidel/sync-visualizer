@@ -46,12 +46,50 @@ class Scope:
 WHOLE = Scope("whole recording")
 
 
+def same_item(a: "Target | None", b: "Target | None") -> bool:
+    """Whether two targets are the same data item, ignoring which moment of it was pointed at."""
+    return a is not None and b is not None and (a.source, a.path, a.kind, a.member) == (b.source, b.path, b.kind, b.member)
+
+
+class Selection:
+    """The one item the user has selected, shared by every view and panel like the playhead is (design doc 28.7).
+    Selecting never moves time or playback."""
+
+    def __init__(self) -> None:
+        self.target: "Target | None" = None
+        self._observers: list = []
+
+    def subscribe(self, observer) -> None:
+        self._observers.append(observer)
+
+    def set(self, target: "Target | None") -> None:
+        if target == self.target:
+            return
+        self.target = target
+        for observer in list(self._observers):
+            try:
+                observer(target)
+            except RuntimeError:                       # an observer whose widget has been deleted
+                self._observers.remove(observer)
+
+    def clear(self) -> None:
+        self.set(None)
+
+    def is_selected(self, target: "Target | None") -> bool:
+        return same_item(self.target, target)
+
+
 @dataclass
 class Field:
     name: str
     value: str
     group: str = ""
-    brief: bool = False           # worth showing in a hover, not only in the full panel
+    brief: bool = False           # worth showing in a hover by default, not only in the full panel
+    key: str = ""                 # stable name for choosing which figures a hover shows (the label changes with the scope)
+
+    def __post_init__(self) -> None:
+        if not self.key:
+            self.key = self.name
 
 
 @dataclass
@@ -81,15 +119,15 @@ def event_fields(series: EventSeries, scope: Scope = WHOLE) -> list[Field]:
     if len(times):
         a, b = _scoped_range(scope, float(times[0]), float(times[-1]))
         inside = times[np.searchsorted(times, a, side="left"):np.searchsorted(times, b, side="right")]
-        out.append(Field(f"Events ({scope.label})", str(len(inside)), "Statistics", brief=True))
+        out.append(Field(f"Events ({scope.label})", str(len(inside)), "Statistics", brief=True, key="events"))
         if b > a:
-            out.append(Field(f"Rate ({scope.label})", f"{len(inside) / (b - a):.3g} per second", "Statistics", brief=True))
+            out.append(Field(f"Rate ({scope.label})", f"{len(inside) / (b - a):.3g} per second", "Statistics", brief=True, key="rate"))
         if len(inside) > 1:
-            out.append(Field(f"Typical gap ({scope.label})", f"{np.median(np.diff(inside)) * 1000:.3g} ms", "Statistics"))
+            out.append(Field(f"Typical gap ({scope.label})", f"{np.median(np.diff(inside)) * 1000:.3g} ms", "Statistics", key="gap"))
         if scope is not WHOLE:
-            out.append(Field("Events (whole recording)", str(len(times)), "Statistics"))
+            out.append(Field("Events (whole recording)", str(len(times)), "Statistics", key="events_all"))
     else:
-        out.append(Field("Events", "0", "Statistics", brief=True))
+        out.append(Field("Events", "0", "Statistics", brief=True, key="events"))
     out += metadata_fields(series.metadata)
     return out
 
@@ -99,21 +137,21 @@ def interval_fields(series: IntervalSeries, scope: Scope = WHOLE) -> list[Field]
     if len(series):
         a, b = _scoped_range(scope, float(series.starts.min()), float(series.stops.max()))
         keep = (series.starts < b) & (series.stops > a)
-        out.append(Field(f"Intervals ({scope.label})", str(int(keep.sum())), "Statistics", brief=True))
+        out.append(Field(f"Intervals ({scope.label})", str(int(keep.sum())), "Statistics", brief=True, key="intervals"))
         if keep.any():
             typical = np.median((series.stops - series.starts)[keep]) * 1000
-            out.append(Field("Typical duration", f"{typical:.3g} ms", "Statistics", brief=True))
+            out.append(Field("Typical duration", f"{typical:.3g} ms", "Statistics", brief=True, key="duration"))
         if scope is not WHOLE:
-            out.append(Field("Intervals (whole recording)", str(len(series)), "Statistics"))
+            out.append(Field("Intervals (whole recording)", str(len(series)), "Statistics", key="intervals_all"))
     else:
-        out.append(Field("Intervals", "0", "Statistics", brief=True))
+        out.append(Field("Intervals", "0", "Statistics", brief=True, key="intervals"))
     return out
 
 
 def timeseries_fields(series, scope: Scope = WHOLE) -> list[Field]:
     """Range of a time series in `scope` (read thinned, so a long recording is not loaded to answer a hover)."""
     if len(series) == 0:
-        return [Field("Samples", "0", "Statistics", brief=True)]
+        return [Field("Samples", "0", "Statistics", brief=True, key="samples")]
     a, b = _scoped_range(scope, float(series.first_time), float(series.last_time))
     window = series.window(a, b, max_points=20000)
     values = np.asarray(window.values, dtype=float)
@@ -121,15 +159,15 @@ def timeseries_fields(series, scope: Scope = WHOLE) -> list[Field]:
     unit = f" {series.unit}" if getattr(series, "unit", "") else ""
     out: list[Field] = []
     if values.size:
-        out.append(Field(f"Lowest ({scope.label})", _number(float(values.min())) + unit, "Statistics", brief=True))
-        out.append(Field(f"Highest ({scope.label})", _number(float(values.max())) + unit, "Statistics", brief=True))
-    out.append(Field(f"Samples ({scope.label})", str(series.count_between(a, b)), "Statistics"))
+        out.append(Field(f"Lowest ({scope.label})", _number(float(values.min())) + unit, "Statistics", brief=True, key="lowest"))
+        out.append(Field(f"Highest ({scope.label})", _number(float(values.max())) + unit, "Statistics", brief=True, key="highest"))
+    out.append(Field(f"Samples ({scope.label})", str(series.count_between(a, b)), "Statistics", key="samples"))
     return out
 
 
 def metadata_fields(metadata: dict) -> list[Field]:
     """What the source attached to an item (a unit's depth and layer), shown as given."""
-    return [Field(str(k), _plain(v), "From the file") for k, v in metadata.items()]
+    return [Field(str(k), _plain(v), "From the file", key=f"file:{k}") for k, v in metadata.items()]
 
 
 def _plain(value) -> str:

@@ -142,3 +142,112 @@ def test_the_time_series_view_points_at_its_series(window):
 def test_statistics_are_worked_out_over_the_current_segment_when_there_are_segments(window):
     scope = window.context.inspector.scope()
     assert scope is WHOLE or scope.label == "whole recording"        # this project has no segmentation
+
+
+# -- selection and the details panel (step 2) ------------------------------------------------------------------
+class _Click:
+    """Just enough of a pyqtgraph mouse click."""
+
+    def __init__(self, scene, double=False):
+        self._scene, self._double = scene, double
+
+    def button(self):
+        from PySide6.QtCore import Qt
+        return Qt.MouseButton.LeftButton
+
+    def scenePos(self):
+        return self._scene
+
+    def double(self):
+        return self._double
+
+
+def _scene_point(view, x, y):
+    import pyqtgraph as pg
+    return view.plot.getPlotItem().vb.mapViewToScene(pg.Point(x, y))
+
+
+def _tile_centre(view, name):
+    rect = next(r for r, row in zip(view.lamps.tile_rects(), view.rows) if row["name"] == name)
+    return view.lamps.mapTo(view, QPoint(int(rect.center().x()), int(rect.center().y())))
+
+
+def test_clicking_a_tile_selects_it_and_shows_its_details_without_moving_time(window):
+    view = _units(window)
+    view.resize(600, 400)
+    before = window.context.timeline.time
+    assert view.select_at(_tile_centre(view, "Unit 12 · L5b"))
+    selected = window.context.selection.target
+    assert selected.member == "12" and window.context.timeline.time == before
+    panel = window.details_panel
+    assert panel.title.text() == "Unit 12 · L5b" and panel.description.text() == "A deep unit."
+    names = [panel.tree.topLevelItem(g).child(c).text(0) for g in range(panel.tree.topLevelItemCount())
+             for c in range(panel.tree.topLevelItem(g).childCount())]
+    assert "depth" in names and "layer" in names                  # everything is in the panel, not only the brief figures
+    assert view.lamps.selected == view.rows.index(next(r for r in view.rows if r["name"] == "Unit 12 · L5b"))
+
+
+def test_the_selected_row_is_marked_in_the_tracks_view_and_clearing_unmarks_it(window):
+    candidate = next(c for c in TracksView.candidates(window.source_catalog()) if c.spec["title"] == "Units")
+    tracks = window.add_view(candidate.spec)
+    tracks.resize(800, 400)
+    tracks.refresh(3.0)
+    QApplication.instance().processEvents()
+    window.context.selection.set(__import__("syncviz_app.views.rows", fromlist=["row_target"]).row_target(tracks.rows[1]["spec"]))
+    assert tracks.band.isVisible() and tracks.band.getRegion() == (tracks.rows[1]["y"] - 0.5, tracks.rows[1]["y"] + 0.5)
+    window.context.selection.clear()
+    assert not tracks.band.isVisible() and window.details_panel.title.text().startswith("Click something")
+
+
+def test_a_click_selects_where_there_is_something_and_a_double_click_seeks(window):
+    view = next(v for v in window.views if v.title == "Angle")
+    view.resize(800, 300)
+    view.refresh(3.0)                                              # centre the window on 3 s
+    QApplication.instance().processEvents()
+    scene = _scene_point(view, 3.0, 0.0)
+    timeline = window.context.timeline
+    start = timeline.time
+    view._clicked(_Click(scene))
+    assert window.context.selection.target.member == "angle" and timeline.time == start
+    view._clicked(_Click(scene, double=True))
+    assert timeline.time == pytest.approx(3.0, abs=0.05)
+
+
+def test_a_point_outside_every_row_points_at_nothing_so_a_click_there_seeks(window):
+    candidate = next(c for c in TracksView.candidates(window.source_catalog()) if c.spec["title"] == "Units")
+    tracks = window.add_view(candidate.spec)
+    tracks.resize(800, 400)
+    tracks.refresh(3.0)
+    QApplication.instance().processEvents()
+    far_above = _scene_point(tracks, 2.0, len(tracks.rows) + 5)
+    assert tracks.target_at(tracks.plot.mapTo(tracks, tracks.plot.mapFromScene(far_above))) is None
+
+
+def test_the_figures_a_hover_shows_are_the_users_choice_and_are_saved_in_the_workspace(window):
+    view = _units(window)
+    view.resize(600, 400)
+    centre = _tile_centre(view, "Unit 12 · L5b")
+    assert "depth" not in view.hover_text(centre)
+    view.select_at(centre)
+    panel = window.details_panel
+    from PySide6.QtWidgets import QCheckBox
+    boxes = panel.tree.findChildren(QCheckBox)
+    depth = next(i for i, f in enumerate(window.context.inspector.details(window.context.selection.target).fields) if f.key == "file:depth")
+    boxes[depth].setChecked(True)
+    assert "depth: 917" in view.hover_text(centre)
+    saved = window.settings()["inspection"]["hover"]
+    assert "file:depth" in saved
+    window.context.inspector.hover_keys = None
+    window._apply_settings({"inspection": {"hover": saved}})
+    assert "depth: 917" in view.hover_text(centre)
+
+
+def test_a_source_can_add_facts_only_it_knows(window):
+    source = window.context.resources.source("session")
+    from syncviz.inspection import Field
+    source.details = lambda target: [Field("Isolation", "good", "From the recording system")]
+    view = _units(window)
+    view.resize(600, 400)
+    view.select_at(_tile_centre(view, "Unit 12 · L5b"))
+    values = _values(window.context.inspector.details(window.context.selection.target).fields)
+    assert values["Isolation"] == "good"
