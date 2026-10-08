@@ -364,6 +364,11 @@ class FilterBar(QToolBar):
             box.blockSignals(False)
         self._filters_changed(0)
 
+    def refresh(self) -> None:
+        """The segments that count changed (event conditions): update the counts in the options and the match count."""
+        self._refresh_options()
+        self._update_match_label()
+
     def repopulate(self) -> None:
         """Refill the options from the navigator's (new) segments, with every filter back on All.
         A filter whose attribute the new segments lack is disabled."""

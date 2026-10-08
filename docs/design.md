@@ -2436,7 +2436,9 @@ Easy way to build and test it without waiting for a mismatched data set: make a 
 frames added at the start, so the video lags the recording by a known amount, then check that the sync diagnostics see the offset
 and that entering the offset makes the video line up (blackouts back on the trial starts).
 
-**Event conditions (planned).** A *chip* is a small labelled token for one active condition, shown in a docked panel where it can be
+**Event conditions (built, first version).** `syncviz/conditions.py` (pure), `event_conditions.py` (the conditions in force), `events_panel.py` (the docked Events panel and its dialog). The project names the events in an `events:` section by scope; the panel starts empty; chips and the filters are saved in the workspace (`settings.events`); a condition that would leave no segment is refused with a message; conditions follow the chosen segmentation and the open recording (dropped with a note if nothing would be left); the command "Only segments with this event" is offered on any target the project names. The per-whisker dropdowns and the Behavior events view were removed from the whisker project. Still to do from the description below: the indicator view's group headings and search box, and "make windows around this event".
+
+**Event conditions (design).** A *chip* is a small labelled token for one active condition, shown in a docked panel where it can be
 changed or removed with a click. One chip is one question with an answer: a list of events of which any one counts (the OR) and
 yes or no. Different chips combine with AND, and with the other filters. This covers "(C0 or C1 touched) and (licked)" without a
 query builder; deeper nesting would use saved groups as building blocks. The panel starts empty and the user adds what they need;

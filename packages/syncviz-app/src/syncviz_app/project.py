@@ -212,6 +212,12 @@ class Project:
         return list(self.config.get("views", []))
 
     @property
+    def event_groups(self) -> dict[str, dict[str, dict]]:
+        """The events the user can build conditions from, by scope: `events: {Contacts: {Whisker C0 touch: {from: ...}}}`."""
+        return {str(group): {str(name): dict(spec) for name, spec in (events or {}).items()}
+                for group, events in (self.config.get("events") or {}).items()}
+
+    @property
     def segmentation_specs(self) -> dict[str, dict]:
         return dict(self.config.get("segmentations", {}))
 

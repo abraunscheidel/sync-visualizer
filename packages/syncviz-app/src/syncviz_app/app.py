@@ -7,6 +7,7 @@ from pathlib import Path
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL, Shifted
+from syncviz_app.event_conditions import EventConditions
 from syncviz_app.inspector import Inspector
 from syncviz_app.segmentation import segments
 from syncviz_app.keys import DEFAULT_KEYS
@@ -43,6 +44,7 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
 
     context.dates = project.dates
     context.inspector = Inspector(context)
+    context.events = EventConditions(context, project.event_groups)
     context.commands = CommandRegistry(context, project.config.get("interaction"), DEFAULT_KEYS)
 
     # Segment navigation (the first configured segmentation).

@@ -46,6 +46,8 @@ class SegmentNavigator:
         self.plural = label_plural or f"{label}s"  # for irregular plurals ("Stimulus" -> "Stimuli") set it in the config
         self.index_attribute = index_attribute     # attribute shown as the segment's number
         self._skip_hidden = True
+        self._criteria: dict = {}                   # the attribute filter in force
+        self._mask: np.ndarray | None = None        # segments that also satisfy the event conditions (None: no conditions)
         self.confine = False                       # keep movement inside the segments even when no filter is set (windows)
         self._all = range(len(intervals))
         self._observers: list[Callable[[SegmentNavigator], None]] = []
@@ -182,6 +184,7 @@ class SegmentNavigator:
 
     def _rename(self, label: str | None, plural: str | None, index_attribute: str | None, confine: bool = False) -> None:
         self.confine = confine
+        self._criteria, self._mask = {}, None
         if label is not None:
             self.label = label
             self.plural = plural or f"{label}s"
@@ -258,7 +261,7 @@ class SegmentNavigator:
         """
         if attribute not in self.intervals.attributes:
             raise KeyError(f"no attribute {attribute!r} (available: {sorted(self.intervals.attributes)})")
-        rows = self.intervals.select(**criteria) if criteria else np.arange(len(self.intervals))
+        rows = self._rows(criteria)
         values, counts = np.unique(self.intervals.attributes[attribute][rows], return_counts=True)
         return dict(zip(values.tolist(), counts.tolist()))
 
@@ -268,13 +271,37 @@ class SegmentNavigator:
         self._current = self._visible[ahead if ahead < len(self._visible) else len(self._visible) - 1]
         self._announce()
 
+    def _rows(self, criteria: dict) -> np.ndarray:
+        """Indices of segments matching the attribute `criteria` and the event conditions."""
+        rows = self.intervals.select(**criteria) if criteria else np.arange(len(self.intervals))
+        return rows if self._mask is None else rows[self._mask[rows]]
+
+    def set_mask(self, mask: np.ndarray | None) -> bool:
+        """Also require the segments to be in `mask` (the ones that satisfy the event conditions), or lift the requirement
+        with None. Combined with the attribute filter. Returns False, changing nothing, if no segment would be left."""
+        if mask is not None and len(mask) != len(self.intervals):
+            raise ValueError("the mask must have one value per segment")
+        previous, self._mask = self._mask, mask
+        visible = self._rows(self._criteria).tolist()
+        if not visible:
+            self._mask = previous
+            return False
+        reference = self._reference_time()
+        self._set_visible(visible)
+        if not self._skip_hidden or self._current in self._visible_set:
+            self._notify()
+        else:
+            self._move_to_next_match(reference)
+        return True
+
     def filter(self, **criteria: Any) -> None:
         """Set which segments match. If movement is restricted to matches and the current
         segment no longer matches, move to the first match after the playhead (or the last one
         before it when none is left ahead), so changing a filter moves you as little as possible."""
-        visible = self.intervals.select(**criteria).tolist()
+        visible = self._rows(criteria).tolist()
         if not visible:
             raise ValueError(f"no segments match {criteria}")
+        self._criteria = dict(criteria)
         reference = self._reference_time()
         self._set_visible(visible)
         if not self._skip_hidden or self._current in self._visible_set:
@@ -283,5 +310,6 @@ class SegmentNavigator:
             self._move_to_next_match(reference)
 
     def clear_filter(self) -> None:
-        self._set_visible(list(self._all))
+        self._criteria = {}
+        self._set_visible(self._rows({}).tolist())
         self._notify()

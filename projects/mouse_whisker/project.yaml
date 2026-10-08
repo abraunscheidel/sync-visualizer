@@ -49,12 +49,7 @@ segmentations:
     label: Trial               # the name shown for each item; add `label_plural:` if "+s" is wrong
     from: session:intervals/trials
     number_attribute: trial      # shown as the segment's number
-    filters: [stimulus, outcome, choice, servo_position, "Touched by C0", "Touched by C1", "Touched by C2", "Touched by C3"]
-    measures:                    # what happens inside each trial, as attributes to filter by
-      "Touched by C0": {from: "session:processing/behavior/contacts_by_whisker_C0", as: presence, labels: [no touch, touch]}
-      "Touched by C1": {from: "session:processing/behavior/contacts_by_whisker_C1", as: presence, labels: [no touch, touch]}
-      "Touched by C2": {from: "session:processing/behavior/contacts_by_whisker_C2", as: presence, labels: [no touch, touch]}
-      "Touched by C3": {from: "session:processing/behavior/contacts_by_whisker_C3", as: presence, labels: [no touch, touch]}
+    filters: [stimulus, outcome, choice, servo_position]
   # Windows cut around events: 500 ms either side of the start of every touch, inside the trial it falls in. They take the
   # trial's attributes, and movement stays inside them. Choose between these and trials in the toolbar.
   touches_c0:
@@ -90,10 +85,8 @@ glossary:
   Reward left: "A drop of water was delivered at the left spout."
   Contact C0: "A touch of the object by whisker C0. Start and end are the dataset authors' definition, taken from the tracking."
   Contact C1: "A touch of the object by whisker C1. Start and end are the dataset authors' definition, taken from the tracking."
-  "Touched by C0": "Whether whisker C0 touched the object at any time during the trial (the dataset authors' contact definition)."
-  "Touched by C1": "Whether whisker C1 touched the object at any time during the trial (the dataset authors' contact definition)."
-  "Touched by C2": "Whether whisker C2 touched the object at any time during the trial (the dataset authors' contact definition)."
-  "Touched by C3": "Whether whisker C3 touched the object at any time during the trial (the dataset authors' contact definition)."
+  Contact C2: "A touch of the object by whisker C2. Start and end are the dataset authors' definition, taken from the tracking."
+  Contact C3: "A touch of the object by whisker C3. Start and end are the dataset authors' definition, taken from the tracking."
   Whiskers: "The four tracked whiskers, C0 to C3. Each is followed by eight points from the tip to the base."
   Contacts: "Touches of the object, as a badge for when each happens and a ring for where on the picture."
   Licks and rewards: "Tongue contacts with the spouts, and water deliveries."
@@ -101,6 +94,20 @@ glossary:
   Contact point C1: "Where on the picture whisker C1 touched the object, averaged over the contact, so the ring does not move during it."
   Contact point C2: "Where on the picture whisker C2 touched the object, averaged over the contact, so the ring does not move during it."
   Contact point C3: "Where on the picture whisker C3 touched the object, averaged over the contact, so the ring does not move during it."
+
+# The events the Events panel can build conditions from ("keep the trials where any of these happened"), by scope. The panel
+# starts empty; the viewer adds what they need and saves it in the workspace. Names here are the ones shown, and the glossary
+# explains them. Not listed: "rewards right" is a copy of "licks right" in this dataset.
+events:
+  Contacts:
+    Contact C0: {from: "session:processing/behavior/contacts_by_whisker_C0"}
+    Contact C1: {from: "session:processing/behavior/contacts_by_whisker_C1"}
+    Contact C2: {from: "session:processing/behavior/contacts_by_whisker_C2"}
+    Contact C3: {from: "session:processing/behavior/contacts_by_whisker_C3"}
+  Licks and rewards:
+    Lick left: {from: "session:processing/behavior/licks", member: left}
+    Lick right: {from: "session:processing/behavior/licks", member: right}
+    Reward left: {from: "session:processing/behavior/rewards", member: left}
 
 # What one step of the playhead (Shift+Left / Shift+Right) means. Optional: without this the
 # toolbar starts on the first view that has a time grid, and the user can change it there.
@@ -145,16 +152,6 @@ views:
     title: Whisker C0 angle
     series: {from: "session:processing/behavior/processed_position_whisker_C0", member: angle}
     window: 10
-  - type: tracks
-    title: Behavior events
-    window: 10
-    rows:
-      - {name: Lick left,  kind: events,    from: "session:processing/behavior/licks",   member: left}
-      - {name: Lick right, kind: events,    from: "session:processing/behavior/licks",   member: right}
-      - {name: Reward left, kind: events,   from: "session:processing/behavior/rewards", member: left}
-      - {name: Contact C0, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
-      - {name: Contact C1, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
-    # Not listed: "rewards right" is a copy of "licks right" in this dataset.
 
 # Evidence about synchronization, shown by Tools > Sync diagnostics. Results are kept (the first scan of a long video
 # takes minutes). "pass" means consistent with the clocks agreeing within the tolerance, not proof.

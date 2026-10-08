@@ -40,6 +40,7 @@ class AppContext:
     notes: list[str] = field(default_factory=list)       # plain factual remarks about the data
     dates: DateFormat = field(default_factory=DateFormat)   # how dates and times are shown
     selection: Selection = field(default_factory=Selection)   # the one item the user has selected
+    events: object = None                                 # the EventConditions in force
     commands: object = None                               # a CommandRegistry: what can be done with what a view points at
     inspector: object = None                              # an Inspector: the details of what a view points at
 

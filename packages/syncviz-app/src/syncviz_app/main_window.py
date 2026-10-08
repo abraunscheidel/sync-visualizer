@@ -12,7 +12,9 @@ import time
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
 from syncviz import plugins
+from syncviz.conditions import Condition
 from syncviz_app.details_panel import DetailsPanel
+from syncviz_app.events_panel import EventsPanel
 from syncviz_app.commands import Command
 from syncviz_app.segmentation import segments
 from syncviz_app.loading import LoadingScreen, run_in_background
@@ -106,6 +108,16 @@ class MainWindow(QMainWindow):
         details_dock.setObjectName("details")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)
         self.details_dock = details_dock
+        self.events_panel = EventsPanel(context)
+        events_dock = QDockWidget("Events", self)
+        events_dock.setWidget(self.events_panel)
+        events_dock.setObjectName("events")
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, events_dock)
+        self.tabifyDockWidget(details_dock, events_dock)
+        details_dock.raise_()
+        self.events_dock = events_dock
+        if self.filter_bar is not None:
+            context.events.subscribe(self.filter_bar.refresh)         # the counts in the filters follow the conditions
         self._register_commands()
 
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
@@ -207,6 +219,15 @@ class MainWindow(QMainWindow):
                     out.append(Command(f"{prefix}:{name}", view_class.display_name or name, show))
             return out
 
+        def only_with_event(target, _origin) -> None:
+            name = self.context.events.name_of(target)
+            if name is not None and self.context.events.add(Condition((name,), True)):
+                self.events_dock.show()
+                self.events_dock.raise_()
+
+        registry.register(Command("only_with_event", "Only segments with this event", only_with_event,
+                                  applies=lambda t: self.context.events.name_of(t) is not None,
+                                  description="Add an event condition that keeps only the segments where this happens"))
         registry.register(Command("show_details", "Show details", show_details,
                                        description="Select this and bring up the Details panel"))
         registry.register(Command("open_as_view", "Open as view", children=lambda t, o=None: ways_to_open(t, o, False),
@@ -225,6 +246,7 @@ class MainWindow(QMainWindow):
         out = {"navigation": self.navigation.state(), "view_lags": dict(self._lags),
                "view_settings": {t: dict(v) for t, v in self._view_settings.items()}}
         out["inspection"] = self.details_panel.state()
+        out["events"] = self.context.events.state()
         if self.filter_bar is not None:
             out["filters"] = self.filter_bar.state()
         if self.collection_bar is not None:
@@ -286,6 +308,7 @@ class MainWindow(QMainWindow):
             self.filter_bar.apply_state(settings.get("filters", {}))
         if self.collection_bar is not None:
             self.collection_bar.apply_state(settings.get("collections", {}))
+        self.context.events.apply_state(settings.get("events", {}))             # last: the segments are now the right ones
 
     def current_workspace(self) -> Workspace:
         def encode(data):
@@ -423,6 +446,7 @@ class MainWindow(QMainWindow):
                 self.filter_bar.show_segmentation(chosen[0])
             else:
                 self.filter_bar.repopulate()
+            context.events.reapply()
         self._sync_views(Workspace(added=list(self._added.values()), removed=list(self._removed)), self.loading.progress)
         self.loading.progress("Arranging the window…")
         self._apply_lags(dict(self._lags))
@@ -457,6 +481,7 @@ class MainWindow(QMainWindow):
         context.notes.extend(notes)
         if self.filter_bar is not None:
             self.filter_bar.show_segmentation(name)
+        context.events.reapply()
         return True
 
     def switch_workspace(self, name: str) -> bool:

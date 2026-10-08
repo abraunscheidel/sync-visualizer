@@ -124,6 +124,12 @@ segmentations:
     label: Touch
     derive: {from: "session:processing/behavior/contacts_C0", edge: start, before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus]
+events:
+  Contacts:
+    Contact C0: {from: "session:processing/behavior/contacts_C0"}
+  Licks:
+    Lick left: {from: "session:processing/behavior/licks", member: left}
+    Lick right: {from: "session:processing/behavior/licks", member: right}
 views:
   - type: tracks
     title: Trials
