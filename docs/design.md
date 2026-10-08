@@ -2271,9 +2271,9 @@ target; the menu shows shortcuts. "Open as view" is a submenu listing every way 
 the view types that accept it.
 Left click runs the primary action and double click a second one, both set in project config, so the app stays agnostic.
 Select means marking one item (a unit, a row, a curve) as the shared current selection: highlighted wherever it appears,
-shown in the detail panel, followed by selection-bound views; it never moves time or playback by itself. The proposed default
-for left click: a target with a specific time (a spike, a badge, a trace point) is selected and sought to; a target without
-one (a whole row or unit) is only selected. Seeking can also be triggered separately. Still to confirm with the user. Applicability is declared by the
+shown in the detail panel, followed by selection-bound views; it never moves time or playback by itself. Decided: left click only selects, so a
+user can select something and act on it without changing playback. Double click seeks to the target's time (when it has
+one). Both are defaults that project config can change, and seeking is also available from the menu. Applicability is declared by the
 action, never hardcoded in the core. The ideas in 16.2 become ordinary actions rather than a feature of their own.
 
 **Rules.**
