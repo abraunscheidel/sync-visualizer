@@ -68,11 +68,13 @@ views:
       # `group:` on any item puts it under one switch in the Views list (a group can mix badges and drawings).
       # Drawn on the picture itself, in picture pixels. The tracked whiskers are lines from base to tip (the file stores them
       # with a unit conversion, which is undone to get pixels); a ring marks the tip while a contact lasts.
-      lines:
-        - {name: Whisker C0, group: Whiskers, from: "session:processing/behavior/processed_position_whisker_C0", base: [base_x, base_y], tip: [tip_x, tip_y]}
-        - {name: Whisker C1, group: Whiskers, from: "session:processing/behavior/processed_position_whisker_C1", base: [base_x, base_y], tip: [tip_x, tip_y]}
-        - {name: Whisker C2, group: Whiskers, from: "session:processing/behavior/processed_position_whisker_C2", base: [base_x, base_y], tip: [tip_x, tip_y]}
-        - {name: Whisker C3, group: Whiskers, from: "session:processing/behavior/processed_position_whisker_C3", base: [base_x, base_y], tip: [tip_x, tip_y]}
+      # The eight tracked markers along each whisker (tip to base), drawn as a curve, as dots, or both; `skeleton_style` is the start.
+      skeleton_style: curve
+      skeletons:
+        - {name: Whisker C0, group: Whiskers, from: "session:processing/behavior/raw_position_whisker_C0"}
+        - {name: Whisker C1, group: Whiskers, from: "session:processing/behavior/raw_position_whisker_C1"}
+        - {name: Whisker C2, group: Whiskers, from: "session:processing/behavior/raw_position_whisker_C2"}
+        - {name: Whisker C3, group: Whiskers, from: "session:processing/behavior/raw_position_whisker_C3"}
       markers:
         - {name: Contact point C0, group: Contacts, from: "session:processing/behavior/contacts_by_whisker_C0", x: tip_x, y: tip_y, color_of: Whisker C0}
         - {name: Contact point C1, group: Contacts, from: "session:processing/behavior/contacts_by_whisker_C1", x: tip_x, y: tip_y, color_of: Whisker C1}

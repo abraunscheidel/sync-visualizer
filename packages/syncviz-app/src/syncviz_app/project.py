@@ -19,7 +19,7 @@ import json
 import numpy as np
 
 from syncviz import plugins, processors
-from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
+from syncviz.resources import EventSeries, IntervalSeries, PointTracks, TimeSeries
 from syncviz.catalog import Collection, discover, fill, has_unfilled
 from syncviz.sources import MissingDataError, Source
 
@@ -76,6 +76,12 @@ class ResourceStore:
                 raise ValueError(f"{ref!r} has several members {sorted(members)}; name one with 'member'")
             return next(iter(members.values()))
         return members[member]
+
+    def points(self, ref: str) -> PointTracks:
+        """Tracked points (a pose, a whisker's markers) at `source:path`."""
+        name, path = split_ref(ref)
+        source = self.source(name)
+        return self._get(("pts", ref), lambda: source.read_points(path))
 
     def events_of(self, ref: str) -> dict[str, EventSeries]:
         """Every member of an event container, such as all the units of a recording."""

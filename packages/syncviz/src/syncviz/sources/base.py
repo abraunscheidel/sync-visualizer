@@ -41,6 +41,10 @@ class Source(ABC):
     def describe(self) -> list[str]:
         """Names of the data objects this source can provide, without loading them."""
 
+    def read_points(self, path: str):
+        """Tracked points (a `PointTracks`) at `path`. Sources that have none say so."""
+        raise MissingDataError(f"this source has no point tracks at {path!r}")
+
     def diagnostics(self) -> list:
         """Checks this source can run about itself, as `syncviz.diagnostics.CheckResult`s (for example whether a video's
         frames are evenly spaced). Checks that compare sources belong to the project's `sync` section instead."""

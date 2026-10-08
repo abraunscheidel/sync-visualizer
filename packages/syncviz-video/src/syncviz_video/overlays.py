@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication
 
 from syncviz_app.views.rows import glow_after_events, glow_during_intervals
@@ -200,3 +200,70 @@ class ContactMarkers:
             painter.setPen(QPen(colour, max(2.0, zoom * 3.0)))
             radius = max(10.0, zoom * 16.0)
             painter.drawEllipse(QPointF(image_rect.left() + x * zoom, image_rect.top() + y * zoom), radius, radius)
+
+
+SKELETON_STYLES = ("curve", "points", "both")
+SKELETON_LABELS = {"curve": "Curve", "points": "Points", "both": "Curve and points"}
+
+
+class TrackedSkeletons:
+    """Tracked points drawn on the picture, as a smooth curve through them, as dots, or both.
+
+    Each item is a `PointTracks` (for a whisker: eight markers from tip to base). The positions are looked up at the time of
+    the frame on screen; a frame with no tracked sample close enough shows nothing. The points are in picture pixels unless the
+    project gives `units_per_pixel`.
+    """
+
+    def __init__(self, items: list[dict], style: str = "curve", hidden=frozenset()) -> None:
+        self.items = items               # each: name, group, tracks (PointTracks), scale (pixels per stored unit), color, order
+        self.hidden: set[str] = set(hidden)
+        self.style = "curve"
+        self.set_style(style)
+        self.points: list[np.ndarray | None] = [None] * len(items)
+
+    @property
+    def names(self) -> list[str]:
+        return [item["name"] for item in self.items]
+
+    def set_style(self, style: str) -> None:
+        if style not in SKELETON_STYLES:
+            raise ValueError(f"style must be one of {', '.join(SKELETON_STYLES)}, not {style!r}")
+        self.style = style
+
+    def set_hidden(self, names) -> None:
+        self.hidden = set(names)
+
+    def set_time(self, time: float) -> None:
+        for i, item in enumerate(self.items):
+            found = item["tracks"].at(time)
+            self.points[i] = None if found is None else found * item["scale"]
+
+    def paint(self, painter: QPainter, image_rect: QRectF, image_size: tuple[int, int] = (1, 1)) -> None:
+        width, _height = image_size
+        zoom = image_rect.width() / max(width, 1)
+
+        def place(point) -> QPointF:
+            return QPointF(image_rect.left() + float(point[0]) * zoom, image_rect.top() + float(point[1]) * zoom)
+
+        for item, found in zip(self.items, self.points):
+            if found is None or item["name"] in self.hidden:
+                continue
+            ordered = [place(found[i]) for i in item["order"] if np.isfinite(found[i]).all()]
+            if not ordered:
+                continue
+            if self.style in ("curve", "both") and len(ordered) >= 2:
+                path = QPainterPath(ordered[0])
+                for a, b in zip(ordered[1:-1], ordered[2:]):         # curve through the points: each is a control point, curve joins the midpoints
+                    path.quadTo(a, QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2))
+                path.lineTo(ordered[-1])
+                pen = QPen(item["color"], max(2.0, zoom * 2.5))
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(path)
+            if self.style in ("points", "both"):
+                radius = max(2.5, zoom * 3.0)
+                painter.setPen(QPen(QColor(0, 0, 0, 140), 1))
+                painter.setBrush(item["color"])
+                for k, point in enumerate(ordered):
+                    painter.drawEllipse(point, radius * (1.5 if k == 0 else 1.0), radius * (1.5 if k == 0 else 1.0))   # the first (the tip) is larger

@@ -15,7 +15,8 @@ from syncviz.sources import MissingDataError
 from syncviz_app.views.base import Candidate, View, ViewSetting
 from syncviz_app.views.rows import load_row_data
 from syncviz_video.overlays import (
-    CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, ContactMarkers, CornerBadges, TrackedLines, palette,
+    CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, SKELETON_LABELS, SKELETON_STYLES, ContactMarkers, CornerBadges,
+    TrackedLines, TrackedSkeletons, palette,
 )
 from syncviz_video.frame_index import FrameIndex
 from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
@@ -182,6 +183,8 @@ class VideoView(View):
         layout.addWidget(self.widget)
         self.badges: CornerBadges | None = None
         self.lines: TrackedLines | None = None
+        self.skeletons: TrackedSkeletons | None = None
+        self._skeleton_style_default = "curve"
         self.markers: ContactMarkers | None = None
         self._track_defaults: set[str] = set()
         self._badge_defaults = {"corner": DEFAULT_CORNER, "hidden": set()}
@@ -202,7 +205,17 @@ class VideoView(View):
         """Lines that follow tracked points and rings at contacts, from the overlay's `lines:` and `markers:`. As with the
         badges, one this recording has no data for is left out with a note."""
         colour_index = 0
-        lines, markers = [], []
+        lines, markers, skeletons = [], [], []
+        for spec in overlay.get("skeletons", []):
+            try:
+                tracks = context.resources.points(spec["from"])
+            except MissingDataError as exc:
+                context.notes.append(f"video skeleton {spec.get('name', '')!r} left out: {exc}")
+                continue
+            scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0
+            skeletons.append({"name": spec.get("name", ""), "group": spec.get("group"), "tracks": tracks, "scale": scale,
+                              "order": tracks.chain(), "color": QColor(spec["color"]) if "color" in spec else palette(colour_index)})
+            colour_index += 1
         for spec in overlay.get("lines", []):
             try:
                 members = {"base_x": spec["base"][0], "base_y": spec["base"][1], "tip_x": spec["tip"][0], "tip_y": spec["tip"][1]}
@@ -228,13 +241,17 @@ class VideoView(View):
                 continue
             scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0
             colour = QColor(spec["color"]) if "color" in spec else palette(colour_index)
-            for line in lines:                       # `color_of: Whisker C0` draws the ring in that line's colour
+            for line in (*skeletons, *lines):        # `color_of: Whisker C0` draws the ring in that whisker's colour
                 if line["name"] == spec.get("color_of"):
                     colour = line["color"]
             markers.append({"name": spec.get("name", ""), "group": spec.get("group"), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
                             "y": np.asarray(y, float), "scale": scale, "color": colour})
             colour_index += 1
         self._track_defaults = set(overlay.get("hidden", []))
+        self._skeleton_style_default = overlay.get("skeleton_style", "curve")
+        if skeletons:
+            self.skeletons = TrackedSkeletons(skeletons, self._skeleton_style_default, self._track_defaults)
+            self.widget.layers.append(self.skeletons)
         if lines:
             self.lines = TrackedLines(lines, self._track_defaults)
             self.widget.layers.append(self.lines)
@@ -262,7 +279,7 @@ class VideoView(View):
         """Bring the overlays to the time of the frame on screen (not the playhead, which may be ahead of it)."""
         if self._shown >= 0:
             time = self._shown / self.fps
-            for layer in (self.badges, self.lines, self.markers):
+            for layer in (self.badges, self.skeletons, self.lines, self.markers):
                 if layer is not None:
                     layer.set_time(time)
             self.widget.update()
@@ -278,7 +295,10 @@ class VideoView(View):
                                    [(labels[c], c) for c in (OFF, *CORNERS)]))
             out += [ViewSetting(f"overlay.show.{row['name']}", row["name"], "toggle", row["name"] not in self.badges.hidden,
                                 group=row.get("group")) for row in self.badges.rows]
-        for layer in (self.lines, self.markers):                    # what is drawn in the picture itself
+        if self.skeletons is not None:
+            out.append(ViewSetting("overlay.skeleton_style", "Tracked points", "choice", self.skeletons.style,
+                                   [(SKELETON_LABELS[s], s) for s in SKELETON_STYLES]))
+        for layer in (self.skeletons, self.lines, self.markers):    # what is drawn in the picture itself
             if layer is not None:
                 out += [ViewSetting(f"overlay.track.{item['name']}", f"Draw {item['name']}", "toggle", item["name"] not in layer.hidden,
                                     group=item.get("group")) for item in layer.items]
@@ -295,9 +315,11 @@ class VideoView(View):
             hidden = set(self.badges.hidden)
             (hidden.discard if value else hidden.add)(name)
             self.badges.set_hidden(hidden)
+        elif key == "overlay.skeleton_style" and self.skeletons is not None:
+            self.skeletons.set_style(value)
         elif key.startswith("overlay.track."):
             name = key[len("overlay.track."):]
-            for layer in (self.lines, self.markers):
+            for layer in (self.skeletons, self.lines, self.markers):
                 if layer is not None and name in layer.names:
                     hidden = set(layer.hidden)
                     (hidden.discard if value else hidden.add)(name)
@@ -309,9 +331,11 @@ class VideoView(View):
         if self.badges is not None:
             self.badges.set_corner(self._badge_defaults["corner"])
             self.badges.set_hidden(self._badge_defaults["hidden"])
-        for layer in (self.lines, self.markers):
+        for layer in (self.skeletons, self.lines, self.markers):
             if layer is not None:
                 layer.set_hidden(self._track_defaults)
+        if self.skeletons is not None:
+            self.skeletons.set_style(self._skeleton_style_default)
         self._update_layers()
 
     def _cue_text(self) -> str:

@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from syncviz.resources import EventSeries, IntervalSeries, LazyTimeSeries, TimeSeries
+from syncviz.resources import EventSeries, IntervalSeries, LazyTimeSeries, PointTracks, TimeSeries
 from syncviz.sources import DataEntry, MissingDataError, Source
 
 _TIME_COLUMNS = {"start_time", "stop_time"}
@@ -90,7 +90,47 @@ class NWBSource(Source):
                         entries.append(DataEntry(path, kind, members))
                 elif isinstance(obj, NWBTimeSeries) and plottable(obj):
                     entries.append(DataEntry(path, "timeseries", (obj.name,)))
+        entries += [DataEntry(path, "points", nodes) for path, nodes in self._pose_paths(self.path)]
         return entries
+
+    def read_points(self, path: str) -> PointTracks:
+        """Pose estimation (the ndx-pose layout): several named points tracked over time, joined by edges. Positions are the
+        stored numbers (for tracking on a video, picture pixels), read straight from the file."""
+        import h5py
+
+        def text(x):
+            return x.decode() if isinstance(x, bytes) else str(x)
+
+        with h5py.File(self.path, "r") as f:
+            if path not in f or text(f[path].attrs.get("neurodata_type", "")) != "PoseEstimation":
+                raise MissingDataError(f"no pose estimation at {path!r}")
+            group = f[path]
+            names = [text(x) for x in group["nodes"][:]]
+            series = [group[name] for name in names]
+            first = series[0]
+            if "timestamps" in first:
+                times = np.asarray(first["timestamps"][:], dtype=float)
+            else:
+                times = float(first["starting_time"][()]) + np.arange(first["data"].shape[0]) / float(first["starting_time"].attrs["rate"])
+            xy = np.stack([np.asarray(s["data"][:], dtype=np.float32) for s in series], axis=1)
+            edges = tuple((int(a), int(b)) for a, b in group["edges"][:]) if "edges" in group else ()
+            conversion = float(first["data"].attrs.get("conversion", 1.0))
+            description = text(group["description"][()]) if "description" in group else ""
+        return PointTracks(times, xy, tuple(names), edges, unit="pixel", name=path,
+                           metadata={"description": description, "stored_conversion": conversion})
+
+    @staticmethod
+    def _pose_paths(path) -> list[tuple[str, tuple[str, ...]]]:
+        import h5py
+
+        found = []
+        with h5py.File(path, "r") as f:
+            def visit(name, obj):
+                if isinstance(obj, h5py.Group) and obj.attrs.get("neurodata_type") in ("PoseEstimation", b"PoseEstimation"):
+                    nodes = tuple(x.decode() if isinstance(x, bytes) else str(x) for x in obj["nodes"][:]) if "nodes" in obj else ()
+                    found.append((name, nodes))
+            f.visititems(visit)
+        return found
 
     @staticmethod
     def _units_entry(units) -> DataEntry:

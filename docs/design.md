@@ -2205,3 +2205,11 @@ mix badges and drawings (all the "Contacts" together, say). The Views list shows
 partial state when only some are on; clicking it turns every member on, or off if they were all on. Only the members' switches are
 saved (the group's is worked out from them). A single "Show overlays" switch hides or shows every layer without forgetting the
 individual choices underneath. Groups are a general property of view settings (`ViewSetting.group`), so any view can use them.
+
+**Tracked points (pose).** Several named points tracked over time, with the links between them, are a core resource (`PointTracks`:
+times, x and y of each point, the point names and the edges). The NWB source reads the ndx-pose layout (this dataset has eight
+markers per whisker, tip to base) with positions left as stored (picture pixels), and a source says it has some by returning them
+from `read_points`. The video overlay `skeletons:` draws them on the picture: **curve** (smooth through the points), **points** (a dot
+at each, the first larger) or **both**, chosen in the Views list (`skeleton_style:` is the project's start). Points are placed from the
+tracked sample nearest the frame on screen, a frame with no sample close enough shows nothing, and a point missing in a frame is
+skipped, never drawn at the origin. A whisker read takes about 0.4 s and 30 MB.
