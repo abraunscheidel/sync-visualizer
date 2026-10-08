@@ -82,7 +82,7 @@ def test_the_corner_must_be_a_known_one_or_off(qapp):
 def _alpha(image):
     """The alpha channel of an ARGB32 image as an array (rows by columns)."""
     raw = np.frombuffer(image.constBits(), np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)
-    return raw[:, : image.width(), 3]
+    return raw[:, : image.width(), 3].copy()                     # a copy: the buffer belongs to the image
 
 
 def _painted(badges, corner, size=(400, 300)):
@@ -298,3 +298,180 @@ views:
         assert again.badges.corner == "top-left"
     finally:
         window.close()
+
+
+# -- tracked lines and contact markers ---------------------------------------------------------------------------------
+from syncviz_video.overlays import ContactMarkers, TrackedLines
+
+
+def _line_item(**kw):
+    times = np.array([1.00, 1.01, 1.02, 1.05])               # a gap after 1.02
+    item = {"name": "Whisker", "times": times, "base_x": np.array([100.0, 101, 102, 105]), "base_y": np.array([200.0, 201, 202, 205]),
+            "tip_x": np.array([10.0, 11, np.nan, 15]), "tip_y": np.array([20.0, 21, 22, 25]), "scale": 1.0,
+            "color": QColor(255, 0, 0), "max_gap": 0.015}
+    item.update(kw)
+    return item
+
+
+def test_a_tracked_line_is_placed_from_the_sample_nearest_the_frame_and_not_drawn_when_there_is_none_close_enough(qapp):
+    lines = TrackedLines([_line_item()])
+    lines.set_time(1.012)
+    assert lines.points[0] == (101.0, 201.0, 11.0, 21.0)          # the nearest sample is 1.01
+    lines.set_time(1.035)                                          # in the gap: 15 ms from both neighbours is too far
+    assert lines.points[0] is None
+    lines.set_time(0.5)
+    assert lines.points[0] is None
+    lines.set_time(1.02)                                           # the sample here has no tip: nothing is drawn, not a half line
+    assert lines.points[0] is None
+
+
+def test_stored_units_are_scaled_to_picture_pixels(qapp):
+    lines = TrackedLines([_line_item(scale=20.0)])
+    lines.set_time(1.0)
+    assert lines.points[0] == (2000.0, 4000.0, 200.0, 400.0)
+
+
+def _drawn_alpha(layer, size=(400, 300), rect=QRectF(0, 0, 400, 300), image_size=(400, 300)):
+    image = QImage(*size, QImage.Format.Format_ARGB32)
+    image.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    layer.paint(painter, rect, image_size)
+    painter.end()
+    return _alpha(image)
+
+
+def test_a_line_is_drawn_between_its_two_points_in_the_scaled_picture_position(qapp):
+    item = _line_item(times=np.array([1.0]), base_x=np.array([300.0]), base_y=np.array([200.0]), tip_x=np.array([100.0]),
+                      tip_y=np.array([100.0]))
+    lines = TrackedLines([item])
+    lines.set_time(1.0)
+    alpha = _drawn_alpha(lines)
+    assert alpha[200, 300] > 0 and alpha[100, 100] > 0 and alpha[150, 200] > 0         # both ends and the middle
+    assert alpha[10, 10] == 0 and alpha[250, 50] == 0
+    # the picture shown at half size and offset: points land accordingly
+    half = _drawn_alpha(lines, rect=QRectF(50, 20, 200, 150), image_size=(400, 300))
+    assert half[20 + 100, 50 + 150] > 0 and half[20 + 50, 50 + 50] > 0 and half[200, 300] == 0
+
+
+def test_hidden_lines_are_not_drawn(qapp):
+    lines = TrackedLines([_line_item(times=np.array([1.0]), base_x=np.array([300.0]), base_y=np.array([200.0]),
+                                     tip_x=np.array([100.0]), tip_y=np.array([100.0]))], hidden={"Whisker"})
+    lines.set_time(1.0)
+    assert not _drawn_alpha(lines).any()
+
+
+def _marker_item():
+    return {"name": "Touch", "starts": np.array([2.0, 5.0]), "stops": np.array([2.5, 5.2]), "x": np.array([100.0, 300.0]),
+            "y": np.array([120.0, 80.0]), "scale": 1.0, "color": QColor(0, 255, 0)}
+
+
+def test_a_contact_ring_is_at_that_contacts_own_position_while_it_lasts_then_fades(qapp):
+    markers = ContactMarkers([_marker_item()], decay=0.2)
+    markers.set_time(1.0)
+    assert markers.state[0] is None
+    markers.set_time(2.2)
+    assert markers.state[0] == (100.0, 120.0, 1.0)
+    markers.set_time(5.1)
+    assert markers.state[0] == (300.0, 80.0, 1.0)                    # the second contact, at its own position
+    markers.set_time(5.3)
+    assert 0 < markers.state[0][2] < 1.0
+    markers.set_time(6.0)
+    assert markers.state[0] is None
+
+
+def test_the_ring_is_drawn_around_the_position_and_not_at_it(qapp):
+    markers = ContactMarkers([_marker_item()])
+    markers.set_time(2.2)
+    alpha = _drawn_alpha(markers)
+    assert alpha[120, 100 + 16] > 0 and alpha[120 + 16, 100] > 0       # on the ring
+    assert alpha[120, 100] == 0                                          # empty inside it
+
+
+def test_nwb_keeps_the_unit_conversion_so_pixels_can_be_recovered(tmp_path):
+    from pynwb.behavior import BehavioralTimeSeries
+    from syncviz_nwb import NWBSource
+
+    nwb = NWBFile(session_description="s", identifier="c", session_start_time=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    behavior = nwb.create_processing_module("behavior", "b")
+    ts = BehavioralTimeSeries(name="pos")
+    ts.create_timeseries(name="x", data=np.array([600.0, 610.0]), unit="mm", conversion=0.05, timestamps=[0.0, 1.0])
+    ts.create_timeseries(name="plain", data=np.array([1.0, 2.0]), unit="s", timestamps=[0.0, 1.0])
+    behavior.add(ts)
+    with NWBHDF5IO(str(tmp_path / "c.nwb"), "w") as io:
+        io.write(nwb)
+    members = NWBSource(tmp_path / "c.nwb").read_timeseries("processing/behavior/pos")
+    assert members["x"].values == pytest.approx([30.0, 30.5]) and members["x"].metadata["conversion"] == 0.05
+    assert members["plain"].metadata == {}
+
+
+@pytest.fixture
+def tracked_window(tmp_path, qapp):
+    from pynwb.behavior import BehavioralTimeSeries
+
+    _write_video(tmp_path / "clip.mkv")
+    nwb = NWBFile(session_description="s", identifier="t", session_start_time=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    nwb.add_trial(start_time=0.0, stop_time=11.0)
+    behavior = nwb.create_processing_module("behavior", "b")
+    t = np.arange(0, 11.0, 1 / FPS)
+    pos = BehavioralTimeSeries(name="pos_C0")
+    for name, base in (("base_x", 60.0), ("base_y", 40.0), ("tip_x", 10.0), ("tip_y", 20.0)):
+        pos.create_timeseries(name=name, data=base + t, unit="mm", conversion=0.05, timestamps=t)   # stored in pixels
+    behavior.add(pos)
+    contacts = TimeIntervals(name="contacts_C0", description="c")
+    contacts.add_column(name="tip_x", description="x")
+    contacts.add_column(name="tip_y", description="y")
+    contacts.add_interval(start_time=3.0, stop_time=3.5, tip_x=33.0, tip_y=22.0)
+    behavior.add(contacts)
+    with NWBHDF5IO(str(tmp_path / "session.nwb"), "w") as io:
+        io.write(nwb)
+    (tmp_path / "project.yaml").write_text(f"""
+name: tracked
+sources:
+  session: {{type: nwb, path: session.nwb}}
+  video: {{type: video, path: clip.mkv, fps: {FPS}}}
+segmentations:
+  trials: {{label: Trial, from: "session:intervals/trials"}}
+views:
+  - type: video
+    title: Clip
+    source: video
+    overlay:
+      lines:
+        - {{name: Whisker, from: "session:processing/behavior/pos_C0", base: [base_x, base_y], tip: [tip_x, tip_y]}}
+        - {{name: Ghost, from: "session:processing/behavior/absent", base: [base_x, base_y], tip: [tip_x, tip_y]}}
+      markers:
+        - {{name: Touch, from: "session:processing/behavior/contacts_C0", x: tip_x, y: tip_y, color_of: Whisker}}
+""", encoding="utf-8")
+    w = build_window(tmp_path / "project.yaml", use_workspace=False)
+    w.show()
+    yield w
+    w.close()
+
+
+def test_the_view_places_tracked_lines_in_picture_pixels_even_though_the_series_is_in_other_units(tracked_window):
+    video = next(v for v in tracked_window.views if v.title == "Clip")
+    assert [type(layer).__name__ for layer in video.widget.layers] == ["TrackedLines", "ContactMarkers"]
+    assert video.lines.names == ["Whisker"] and any("'Ghost' left out" in n for n in tracked_window.context.notes)
+    video._shown = 60                                                # frame 60 is 2.0 s
+    video._update_layers()
+    bx, by, tx, ty = video.lines.points[0]
+    assert (bx, by, tx, ty) == pytest.approx((62.0, 42.0, 12.0, 22.0), abs=0.6)       # stored pixels, not the mm the series reports
+
+
+def test_the_marker_takes_the_colour_of_the_line_it_names_and_is_drawn_at_the_contact(tracked_window):
+    video = next(v for v in tracked_window.views if v.title == "Clip")
+    assert video.markers.items[0]["color"] == video.lines.items[0]["color"]
+    video._shown = round(3.2 * FPS)
+    video._update_layers()
+    assert video.markers.state[0][:2] == (33.0, 22.0)
+
+
+def test_each_tracked_thing_can_be_switched_off_and_the_projects_choice_comes_back_on_reset(tracked_window):
+    video = next(v for v in tracked_window.views if v.title == "Clip")
+    keys = [s.key for s in video.settings()]
+    assert keys == ["overlay.track.Whisker", "overlay.track.Touch"]
+    video.apply_setting("overlay.track.Whisker", False)
+    video.apply_setting("overlay.track.Touch", False)
+    assert video.lines.hidden == {"Whisker"} and video.markers.hidden == {"Touch"}
+    video.reset_settings()
+    assert video.lines.hidden == set() and video.markers.hidden == set()

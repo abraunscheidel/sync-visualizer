@@ -65,6 +65,18 @@ views:
         - {name: Reward left, kind: events,   from: "session:processing/behavior/rewards", member: left}
         - {name: Contact C0, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
         - {name: Contact C1, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
+      # Drawn on the picture itself, in picture pixels. The tracked whiskers are lines from base to tip (the file stores them
+      # with a unit conversion, which is undone to get pixels); a ring marks the tip while a contact lasts.
+      lines:
+        - {name: Whisker C0, from: "session:processing/behavior/processed_position_whisker_C0", base: [base_x, base_y], tip: [tip_x, tip_y]}
+        - {name: Whisker C1, from: "session:processing/behavior/processed_position_whisker_C1", base: [base_x, base_y], tip: [tip_x, tip_y]}
+        - {name: Whisker C2, from: "session:processing/behavior/processed_position_whisker_C2", base: [base_x, base_y], tip: [tip_x, tip_y]}
+        - {name: Whisker C3, from: "session:processing/behavior/processed_position_whisker_C3", base: [base_x, base_y], tip: [tip_x, tip_y]}
+      markers:
+        - {name: Contact point C0, from: "session:processing/behavior/contacts_by_whisker_C0", x: tip_x, y: tip_y, color_of: Whisker C0}
+        - {name: Contact point C1, from: "session:processing/behavior/contacts_by_whisker_C1", x: tip_x, y: tip_y, color_of: Whisker C1}
+        - {name: Contact point C2, from: "session:processing/behavior/contacts_by_whisker_C2", x: tip_x, y: tip_y, color_of: Whisker C2}
+        - {name: Contact point C3, from: "session:processing/behavior/contacts_by_whisker_C3", x: tip_x, y: tip_y, color_of: Whisker C3}
   - type: timeseries
     title: Whisker C0 angle
     series: {from: "session:processing/behavior/processed_position_whisker_C0", member: angle}

@@ -14,7 +14,9 @@ from syncviz.core import RegularGrid
 from syncviz.sources import MissingDataError
 from syncviz_app.views.base import Candidate, View, ViewSetting
 from syncviz_app.views.rows import load_row_data
-from syncviz_video.overlays import CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, CornerBadges
+from syncviz_video.overlays import (
+    CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, ContactMarkers, CornerBadges, TrackedLines, palette,
+)
 from syncviz_video.frame_index import FrameIndex
 from syncviz_video.frame_reader import DEFAULT_CACHE_BYTES, PlaybackReader
 
@@ -133,7 +135,7 @@ class _FrameWidget(QWidget):
             p.setOpacity(1.0 - self._placeholder_mix)
             p.drawImage(target, self._image)
             for layer in self.layers:
-                layer.paint(p, target)
+                layer.paint(p, target, (iw, ih))
             p.setOpacity(1.0)
         if self._placeholder_mix > 0.0 or self._image is None:
             fg = pal.color(pal.ColorRole.WindowText)
@@ -178,10 +180,15 @@ class VideoView(View):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.widget)
         self.badges: CornerBadges | None = None
+        self.lines: TrackedLines | None = None
+        self.markers: ContactMarkers | None = None
+        self._track_defaults: set[str] = set()
         self._badge_defaults = {"corner": DEFAULT_CORNER, "hidden": set()}
         overlay = spec.get("overlay")
         if overlay:
-            self._build_badges(context, overlay)
+            self._build_tracking(context, overlay)           # under the badges
+            if overlay.get("rows"):
+                self._build_badges(context, overlay)
         self._wanted = -1
         self._shown = -1
         self._progress_at = perf_counter()     # when a frame last arrived, or the wait began
@@ -189,6 +196,50 @@ class VideoView(View):
         self._cue_timer.setSingleShot(True)
         self._cue_timer.timeout.connect(lambda: self.widget.set_cue(self._cue_text()))
         context.timeline.subscribe(self._on_timeline)
+
+    def _build_tracking(self, context, overlay: dict) -> None:
+        """Lines that follow tracked points and rings at contacts, from the overlay's `lines:` and `markers:`. As with the
+        badges, one this recording has no data for is left out with a note."""
+        colour_index = 0
+        lines, markers = [], []
+        for spec in overlay.get("lines", []):
+            try:
+                members = {"base_x": spec["base"][0], "base_y": spec["base"][1], "tip_x": spec["tip"][0], "tip_y": spec["tip"][1]}
+                series = {key: context.resources.timeseries(spec["from"], member) for key, member in members.items()}
+            except MissingDataError as exc:
+                context.notes.append(f"video line {spec.get('name', '')!r} left out: {exc}")
+                continue
+            first = series["tip_x"]
+            times = first.times
+            stored = first.metadata.get("conversion", 1.0)
+            # Pixels per stored unit: the project can say how many units make a pixel; otherwise undo the file's conversion.
+            scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0 / stored
+            lines.append({"name": spec.get("name", ""), "times": times, "scale": scale, "color": QColor(spec["color"]) if "color" in spec else palette(colour_index),
+                          "max_gap": 1.5 * float(np.median(np.diff(times))) if len(times) > 2 else 0.01,
+                          **{key: np.asarray(s.values, float) for key, s in series.items()}})
+            colour_index += 1
+        for spec in overlay.get("markers", []):
+            try:
+                table = context.resources.intervals(spec["from"])
+                x, y = table.attributes[spec["x"]], table.attributes[spec["y"]]
+            except (MissingDataError, KeyError) as exc:
+                context.notes.append(f"video marker {spec.get('name', '')!r} left out: {exc}")
+                continue
+            scale = 1.0 / float(spec["units_per_pixel"]) if "units_per_pixel" in spec else 1.0
+            colour = QColor(spec["color"]) if "color" in spec else palette(colour_index)
+            for line in lines:                       # `color_of: Whisker C0` draws the ring in that line's colour
+                if line["name"] == spec.get("color_of"):
+                    colour = line["color"]
+            markers.append({"name": spec.get("name", ""), "starts": table.starts, "stops": table.stops, "x": np.asarray(x, float),
+                            "y": np.asarray(y, float), "scale": scale, "color": colour})
+            colour_index += 1
+        self._track_defaults = set(overlay.get("hidden", []))
+        if lines:
+            self.lines = TrackedLines(lines, self._track_defaults)
+            self.widget.layers.append(self.lines)
+        if markers:
+            self.markers = ContactMarkers(markers, float(overlay.get("decay", DEFAULT_DECAY_S)), self._track_defaults)
+            self.widget.layers.append(self.markers)
 
     def _build_badges(self, context, overlay: dict) -> None:
         """Event badges over the picture, from the project's `overlay:` section. A row whose data this recording does
@@ -208,37 +259,51 @@ class VideoView(View):
 
     def _update_layers(self) -> None:
         """Bring the overlays to the time of the frame on screen (not the playhead, which may be ahead of it)."""
-        if self.badges is not None and self._shown >= 0:
-            self.badges.set_time(self._shown / self.fps)
+        if self._shown >= 0:
+            time = self._shown / self.fps
+            for layer in (self.badges, self.lines, self.markers):
+                if layer is not None:
+                    layer.set_time(time)
             self.widget.update()
 
     # -- settings, shown under the Views list --------------------------------------------------
     def settings(self) -> list[ViewSetting]:
-        if self.badges is None or not self.badges.rows:
-            return []
-        labels = {OFF: "Off", **{c: c.replace("-", " ").capitalize() for c in CORNERS}}
-        out = [ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
-                           [(labels[c], c) for c in (OFF, *CORNERS)])]
-        out += [ViewSetting(f"overlay.show.{name}", name, "toggle", name not in self.badges.hidden) for name in self.badges.names]
+        out = []
+        if self.badges is not None and self.badges.rows:
+            labels = {OFF: "Off", **{c: c.replace("-", " ").capitalize() for c in CORNERS}}
+            out.append(ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
+                                   [(labels[c], c) for c in (OFF, *CORNERS)]))
+            out += [ViewSetting(f"overlay.show.{name}", name, "toggle", name not in self.badges.hidden) for name in self.badges.names]
+        for layer in (self.lines, self.markers):                    # what is drawn in the picture itself
+            if layer is not None:
+                out += [ViewSetting(f"overlay.track.{name}", f"Draw {name}", "toggle", name not in layer.hidden) for name in layer.names]
         return out
 
     def apply_setting(self, key: str, value) -> None:
-        if self.badges is None:
-            return
-        if key == "overlay.corner":
+        if key == "overlay.corner" and self.badges is not None:
             self.badges.set_corner(value)
-        elif key.startswith("overlay.show."):
+        elif key.startswith("overlay.show.") and self.badges is not None:
             name = key[len("overlay.show."):]
             hidden = set(self.badges.hidden)
             (hidden.discard if value else hidden.add)(name)
             self.badges.set_hidden(hidden)
+        elif key.startswith("overlay.track."):
+            name = key[len("overlay.track."):]
+            for layer in (self.lines, self.markers):
+                if layer is not None and name in layer.names:
+                    hidden = set(layer.hidden)
+                    (hidden.discard if value else hidden.add)(name)
+                    layer.set_hidden(hidden)
         self._update_layers()
 
     def reset_settings(self) -> None:
         if self.badges is not None:
             self.badges.set_corner(self._badge_defaults["corner"])
             self.badges.set_hidden(self._badge_defaults["hidden"])
-            self._update_layers()
+        for layer in (self.lines, self.markers):
+            if layer is not None:
+                layer.set_hidden(self._track_defaults)
+        self._update_layers()
 
     def _cue_text(self) -> str:
         return "Buffering…" if self.context.timeline.holding else "Loading…"

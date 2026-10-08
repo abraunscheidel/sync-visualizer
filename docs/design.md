@@ -2184,3 +2184,18 @@ corner (top left, top right, bottom left, bottom right, or off) and switch event
 toggle), the Views list shows them when the view is selected, `apply_setting` changes one and `reset_settings` returns to the
 project's values. The window keeps the user's choices by view title in the workspace (`view_settings`), so they are saved
 with it, switch with it, and reset to the project's values with it.
+
+**Tracked lines and contact rings** are two more layers that mark where something is in the picture itself, under the badges.
+A *line* follows a tracked thing from one point to another (a whisker from base to tip): four series of x and y positions are
+looked up at the frame on screen, using the nearest sample within one and a half sample intervals, and a frame with no such
+sample, or a missing value, shows no line rather than a stale one. A *ring* marks where an interval happened in the picture
+(a contact, at the whisker tip) for as long as it lasts, then fades; it uses that interval's own position from the table, and
+`color_of` gives it the colour of a line.
+
+**Positions are in picture pixels.** The NWB file stores them with a unit conversion (this dataset's whisker positions are pixel
+column and row numbers, converted at 0.05 mm per pixel and labelled millimetres). The source keeps the conversion with the
+series (`metadata.conversion`), and the layer undoes it, or the project says `units_per_pixel`. On a real frame the tracked
+whiskers lie along the visible whiskers and the rings sit where they meet the object. That is also a direct visual check that the
+tracking and the video are on the same clock: if the lines lagged the whiskers, they would trail behind them as the whiskers move.
+
+Everything is switchable per item in the Views list (`Draw Whisker C0`, `Draw Contact point C1`, ...) and saved with the workspace.

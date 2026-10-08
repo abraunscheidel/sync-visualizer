@@ -20,6 +20,12 @@ _TIME_COLUMNS = {"start_time", "stop_time"}
 LAZY_MIN_SAMPLES = 5_000_000      # a series with at least this many samples stays in the file
 
 
+def _conversion_metadata(scale: float, offset: float) -> dict:
+    """What turns the numbers stored in the file into the series' unit (value = stored * conversion + offset), kept so
+    that something needing the stored numbers (pixel positions on a video) can undo it."""
+    return {"conversion": scale, "offset": offset} if (scale != 1.0 or offset != 0.0) else {}
+
+
 class NWBSource(Source):
     def __init__(self, path: str | Path, lazy_min_samples: int = LAZY_MIN_SAMPLES) -> None:
         self.path = Path(path)
@@ -195,14 +201,15 @@ class NWBSource(Source):
                 values = np.asarray(ts.data[:])
                 if scale != 1.0 or offset != 0.0:
                     values = values.astype(float) * scale + offset
-                out[name] = TimeSeries(times=times, values=values, unit=ts.unit or "", name=f"{path}/{name}")
+                out[name] = TimeSeries(times=times, values=values, unit=ts.unit or "", name=f"{path}/{name}",
+                                       metadata=_conversion_metadata(scale, offset))
             return out
 
     def _lazy(self, ts, scale: float, offset: float, name: str) -> LazyTimeSeries:
         """A series left in the file: its samples (and explicit timestamps) are read a window at a time."""
         h5 = self._h5file()
         data = h5[ts.data.name]
-        common = dict(scale=scale, offset=offset, unit=ts.unit or "", name=name)
+        common = dict(scale=scale, offset=offset, unit=ts.unit or "", name=name, metadata=_conversion_metadata(scale, offset))
         if ts.timestamps is not None:
             return LazyTimeSeries(data, times=h5[ts.timestamps.name], **common)
         return LazyTimeSeries(data, start=float(ts.starting_time), rate=float(ts.rate), **common)
