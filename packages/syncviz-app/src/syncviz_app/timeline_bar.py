@@ -1,19 +1,32 @@
-"""The timeline strip: playhead, segment boundaries, and each view's extent."""
+"""The timeline strip: playhead and segments, and where each view has data.
+
+The grey bar is the shared timeline: its bands are segments (such as trials), the amber
+band is the current one and the blue band the selection. Below it, "Data coverage" has one
+line per view, in that view's colour, drawn only where the view has data, so gaps in a
+source show as breaks. The same colour marks the view's panel title.
+"""
 
 from __future__ import annotations
 
+import bisect
 import time
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from syncviz.core import Seek
 from syncviz_app.context import AppContext
 
 MARGIN = 14
-EXTENT_ROW_HEIGHT = 4
-EXTENT_ROW_GAP = 2
+GROOVE_TOP = 8
+GROOVE_HEIGHT = 24
+CAPTION_TOP = GROOVE_TOP + GROOVE_HEIGHT + 4
+CAPTION_HEIGHT = 12
+ROWS_TOP = CAPTION_TOP + CAPTION_HEIGHT + 2
+ROW_HEIGHT = 6
+ROW_PITCH = 8                           # row height plus the gap below it
+LABELS_HEIGHT = 18
 PLAYING_REPAINT_INTERVAL_S = 1 / 30
 
 
@@ -21,9 +34,11 @@ class TimelineBar(QWidget):
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
-        self.setMinimumHeight(64)
+        self._names = list(context.extents)                 # row order
+        self.setFixedHeight(ROWS_TOP + max(len(self._names), 1) * ROW_PITCH + 6 + LABELS_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)                         # tooltips while hovering, not just dragging
         self._last_request = 0.0
         context.timeline.subscribe(self._on_timeline)
         if context.navigator is not None:
@@ -47,6 +62,47 @@ class TimelineBar(QWidget):
         width = max(self.width() - 2 * MARGIN, 1)
         return tl.start + (x - MARGIN) / width * (tl.stop - tl.start)
 
+    def _pixel_runs(self, runs: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Coverage runs in pixels, with gaps narrower than a pixel closed up.
+
+        A gap too small to see would otherwise leave anti-aliasing seams that look like
+        texture. Every gap is still reported in the tooltip and the project panel.
+        """
+        merged: list[list[float]] = []
+        for lo, hi in runs:
+            x0, x1 = self._x_of(lo), self._x_of(hi)
+            if merged and x0 - merged[-1][1] < 1.0:
+                merged[-1][1] = max(merged[-1][1], x1)
+            else:
+                merged.append([x0, x1])
+        return [(a, b) for a, b in merged]
+
+    # -- what is under the pointer -------------------------------------------------------
+    def row_at(self, y: float) -> str | None:
+        """Name of the view whose coverage line is at height `y`, if any."""
+        if y < ROWS_TOP:
+            return None
+        row = int((y - ROWS_TOP) // ROW_PITCH)
+        return self._names[row] if 0 <= row < len(self._names) else None
+
+    def has_data_at(self, name: str, time: float) -> bool:
+        runs = self.context.coverage.get(name, [])
+        i = bisect.bisect_right([r[0] for r in runs], time) - 1
+        return i >= 0 and time <= runs[i][1]
+
+    def tooltip_at(self, x: float, y: float) -> str | None:
+        name = self.row_at(y)
+        if name is None:
+            return None
+        lo, hi = self.context.extents[name]
+        t = self._time_at(x)
+        runs = self.context.coverage.get(name, [])
+        lines = [name, f"Data from {lo:.2f} to {hi:.2f} s"]
+        if len(runs) > 1:
+            lines.append(f"{len(runs) - 1} gap{'s' if len(runs) > 2 else ''} in between")
+        lines.append(f"At {t:.2f} s: {'has data' if self.has_data_at(name, t) else 'no data'}")
+        return "\n".join(lines)
+
     # -- painting ------------------------------------------------------------------------
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -56,9 +112,10 @@ class TimelineBar(QWidget):
         groove = QColor(text); groove.setAlpha(28)
         band = QColor(text); band.setAlpha(22)
         current = QColor("#e0a030"); current.setAlpha(70)
+        muted = QColor(text); muted.setAlpha(140)
 
         tl = self.context.timeline
-        top, groove_h = 8, 24
+        top, groove_h = GROOVE_TOP, GROOVE_HEIGHT
         p.fillRect(QRectF(MARGIN, top, self.width() - 2 * MARGIN, groove_h), groove)
 
         nav = self.context.navigator
@@ -78,17 +135,21 @@ class TimelineBar(QWidget):
             sel = QColor("#4fa3e0"); sel.setAlpha(50)
             p.fillRect(QRectF(self._x_of(a), top, max(self._x_of(b) - self._x_of(a), 2), groove_h), sel)
 
-        # One thin line per view showing where its data exists; gaps are visible in advance.
-        y = top + groove_h + 6
-        for i, (name, (lo, hi)) in enumerate(self.context.extents.items()):
-            colour = QColor.fromHsv((i * 57) % 360, 140, 200)
-            p.fillRect(QRectF(self._x_of(lo), y, max(self._x_of(hi) - self._x_of(lo), 1), EXTENT_ROW_HEIGHT), colour)
-            y += EXTENT_ROW_HEIGHT + EXTENT_ROW_GAP
+        font = p.font(); font.setPointSizeF(font.pointSizeF() * 0.8); p.setFont(font)
+        p.setPen(muted)
+        p.drawText(QRectF(MARGIN, CAPTION_TOP, 200, CAPTION_HEIGHT), Qt.AlignmentFlag.AlignLeft, "Data coverage")
+
+        # One line per view, in its colour, drawn only where it has data.
+        for row, name in enumerate(self._names):
+            y = ROWS_TOP + row * ROW_PITCH
+            colour = QColor(self.context.colors.get(name, "#888888"))
+            for x0, x1 in self._pixel_runs(self.context.coverage.get(name, [])):
+                p.fillRect(QRectF(x0, y, max(x1 - x0, 1), ROW_HEIGHT), colour)
 
         p.setPen(QPen(text, 1))
-        font = p.font(); font.setPointSizeF(font.pointSizeF() * 0.85); p.setFont(font)
-        p.drawText(QRectF(MARGIN, self.height() - 16, 120, 14), Qt.AlignmentFlag.AlignLeft, f"{tl.start:.1f} s")
-        p.drawText(QRectF(self.width() - MARGIN - 120, self.height() - 16, 120, 14),
+        label_y = self.height() - LABELS_HEIGHT + 2
+        p.drawText(QRectF(MARGIN, label_y, 120, 14), Qt.AlignmentFlag.AlignLeft, f"{tl.start:.1f} s")
+        p.drawText(QRectF(self.width() - MARGIN - 120, label_y, 120, 14),
                    Qt.AlignmentFlag.AlignRight, f"{tl.stop:.1f} s")
 
         x = self._x_of(tl.time)
@@ -106,4 +167,11 @@ class TimelineBar(QWidget):
 
     def mouseMoveEvent(self, event) -> None:
         if event.buttons() & Qt.MouseButton.LeftButton:
+            QToolTip.hideText()
             self._seek_to(event)
+            return
+        tip = self.tooltip_at(event.position().x(), event.position().y())
+        if tip:
+            QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+        else:
+            QToolTip.hideText()

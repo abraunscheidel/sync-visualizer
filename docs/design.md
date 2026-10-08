@@ -1064,6 +1064,32 @@ Conceptually:
 
 The initial goal is functionality rather than visual polish.
 
+### 28.1 Structure of the window
+
+The sketch above is the mouse project's layout, not the framework's. The window has
+two kinds of parts:
+
+- **Always present:** playback controls, segment navigation with its filters, the
+  project information panel, and the timeline strip.
+- **Views:** every other panel. Which views exist, and how many, comes from the
+  project configuration and the installed view plugins. Video is one view type like
+  any other, provided by the video package, not the shell.
+
+**Filters.** Each filter shows how many segments each option would leave given the
+other filters' choices, and options that would leave none are disabled, so an empty
+result cannot be reached. A label shows "N of M match". Changing a filter applies
+immediately; if it hides the current segment the navigator moves to the next match after
+the playhead, and leaves the playhead alone when the current segment still matches.
+
+**Timeline strip.** The grey bar is the shared timeline: its bands are segments, the
+amber band the current one, the blue band the selection. Beneath it, "Data coverage"
+has one line per view, drawn only where that view has data, so a gap in a source is
+a break in its line. Each view has a fixed colour, shown as a stripe on its panel title
+and on its line; hovering a line names the view, its extent, how many gaps it has and
+whether it has data at the pointer. Gaps narrower than a pixel are closed up when
+drawing; they are still counted in the tooltip and the project panel. The timeline
+spans the union of all views' extents, and no source defines its start.
+
 ---
 
 ## 29. Initial Neural Visualization

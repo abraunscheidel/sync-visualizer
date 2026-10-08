@@ -197,3 +197,40 @@ def test_playback_shows_frames_even_when_decoding_is_slower_than_the_playhead(wi
     _pump(qapp, seconds=1.5)
     window.context.bus.publish(SetPlaying(False))
     assert len(shown) >= 8, f"video froze while decoding was slow ({len(shown)} frames shown)"
+
+
+def test_each_view_has_its_own_colour_and_coverage_for_the_timeline(window):
+    ctx = window.context
+    assert set(ctx.colors) == {"Clip", "Angle", "Events"}
+    assert len(set(ctx.colors.values())) == 3                      # all different
+    assert all(len(runs) >= 1 for runs in ctx.coverage.values())
+
+
+def test_timeline_hover_names_the_view_and_says_whether_it_has_data_there(window):
+    bar = window.timeline_bar
+    from syncviz_app import timeline_bar as tb
+
+    y_of = lambda name: tb.ROWS_TOP + bar._names.index(name) * tb.ROW_PITCH + 2
+    mid = bar.width() / 2
+
+    tip = bar.tooltip_at(mid, y_of("Clip"))
+    assert tip.startswith("Clip") and "Data from 0.00" in tip and "has data" in tip
+
+    # the events line begins at -2 s, before the video does
+    x_early = bar._x_of(-1.5)
+    assert "no data" in bar.tooltip_at(x_early, y_of("Clip"))
+    assert "has data" in bar.tooltip_at(x_early, y_of("Events"))
+    assert bar.tooltip_at(mid, 5) is None                          # over the grey bar: no tooltip
+
+
+def test_gaps_smaller_than_a_pixel_are_closed_up_but_visible_ones_are_kept(window):
+    bar = window.timeline_bar
+    tl = window.context.timeline
+    px = (tl.stop - tl.start) / max(bar.width() - 28, 1)          # seconds per pixel
+
+    runs = [(0.0, 1.0), (1.0 + px * 0.3, 2.0), (2.0 + px * 5, 3.0)]   # a sub-pixel gap, then a 5 px gap
+    merged = bar._pixel_runs(runs)
+
+    assert len(merged) == 2
+    assert merged[0][1] == pytest.approx(bar._x_of(2.0))
+    assert merged[1][0] == pytest.approx(bar._x_of(2.0 + px * 5))

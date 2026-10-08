@@ -28,6 +28,12 @@ class View(QWidget):
         """Range of shared time this view has data for, or None if it has no time extent."""
         return None
 
+    def coverage(self) -> list[tuple[float, float]]:
+        """Runs of shared time in which this view has data. Defaults to its whole extent;
+        views whose data has real dropouts report them so the timeline can show the gaps."""
+        extent = self.extent()
+        return [] if extent is None else [extent]
+
     def refresh(self, time: float) -> None:
         """Redraw for the playhead at `time` (shared time). Only called while visible."""
         raise NotImplementedError

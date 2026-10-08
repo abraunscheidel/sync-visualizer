@@ -7,6 +7,7 @@ from pathlib import Path
 from syncviz import plugins
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, SegmentNavigator, Timeline
+from syncviz_app.colors import view_color
 from syncviz_app.context import AppContext
 from syncviz_app.main_window import MainWindow
 from syncviz_app.project import load_project, split_ref
@@ -37,9 +38,11 @@ def build_window(project_path: str | Path) -> MainWindow:
             continue
         view = view_class(context, spec)
         views.append(view)
+        context.colors[view.title] = view_color(len(views) - 1)
         extent = view.extent()
         if extent is not None:
             context.extents[view.title] = extent
+            context.coverage[view.title] = view.coverage()
 
     # The timeline spans everything: no source defines its start or end.
     if context.extents:

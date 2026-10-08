@@ -51,6 +51,9 @@ class MainWindow(QMainWindow):
         for i, view in enumerate(views):
             dock = QDockWidget(view.title)
             dock.setWidget(view)
+            colour = context.colors.get(view.title)
+            if colour:      # the stripe matches this view's line in the timeline's data coverage
+                dock.setStyleSheet(f"QDockWidget::title {{ border-left: 6px solid {colour}; padding-left: 6px; }}")
             dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
             area = {"left": Qt.DockWidgetArea.LeftDockWidgetArea,
                     "right": Qt.DockWidgetArea.RightDockWidgetArea,

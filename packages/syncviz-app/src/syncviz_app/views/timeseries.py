@@ -30,6 +30,9 @@ class TimeSeriesView(TimeWindowView):
             return None
         return float(self.series.times[0]), float(self.series.times[-1])
 
+    def coverage(self):
+        return [(float(a), float(b)) for a, b in self.series.coverage()]
+
     def refresh(self, time: float) -> None:
         lo, hi = self.set_window(time)
         window = self.series.window(lo, hi)

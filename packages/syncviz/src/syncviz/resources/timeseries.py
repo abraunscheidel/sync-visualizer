@@ -30,6 +30,23 @@ class TimeSeries:
     def __len__(self) -> int:
         return len(self.times)
 
+    def coverage(self, gap_factor: float = 3.0) -> np.ndarray:
+        """Where samples exist: an (k, 2) array of [start, stop] runs.
+
+        A run ends wherever the spacing between consecutive samples exceeds `gap_factor`
+        times the typical spacing, so dropouts show up as gaps between runs.
+        """
+        times = self.times
+        if len(times) == 0:
+            return np.empty((0, 2))
+        typical = float(np.median(np.diff(times))) if len(times) > 2 else 0.0
+        if typical <= 0.0:
+            return np.array([[times[0], times[-1]]])
+        breaks = np.flatnonzero(np.diff(times) > gap_factor * typical)
+        starts = np.concatenate([[times[0]], times[breaks + 1]])
+        stops = np.concatenate([times[breaks], [times[-1]]])
+        return np.column_stack([starts, stops])
+
     def window(self, start: float, stop: float) -> TimeSeries:
         """Samples with start <= time < stop (a view; nothing is copied)."""
         lo = int(np.searchsorted(self.times, start, side="left"))

@@ -25,7 +25,10 @@ class InfoPanel(QTextBrowser):
             rows.append(f"<li>{escape(name)} <i>({escape(str(spec.get('type')))})</i></li>")
         rows.append("</ul><b>Data extent</b> (shared time)<ul>")
         for name, (lo, hi) in c.extents.items():
-            rows.append(f"<li>{escape(name)}<br>{lo:.2f} to {hi:.2f} s</li>")
+            swatch = f"<span style='color:{c.colors.get(name, '#888888')}'>&#9632;</span> "
+            gaps = len(c.coverage.get(name, [])) - 1
+            note = f"<br>{gaps} gap{'s' if gaps != 1 else ''} in the data" if gaps > 0 else ""
+            rows.append(f"<li>{swatch}{escape(name)}<br>{lo:.2f} to {hi:.2f} s{note}</li>")
         rows.append("</ul>")
         if c.notes:
             rows.append("<b>Notes</b><ul>" + "".join(f"<li>{escape(n)}</li>" for n in c.notes) + "</ul>")

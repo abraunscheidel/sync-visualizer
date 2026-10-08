@@ -396,3 +396,31 @@ def test_filter_keeps_the_current_segment_when_it_still_matches():
     nav.filter(stimulus="convex")
 
     assert nav.index == 2 and tl.time == 25.0     # the playhead did not move at all
+
+
+# --- TimeSeries.coverage ---------------------------------------------------------------------
+
+def test_coverage_is_one_run_for_evenly_sampled_data():
+    ts = TimeSeries(times=np.arange(0.0, 10.0, 0.5), values=np.zeros(20))
+
+    assert ts.coverage().tolist() == [[0.0, 9.5]]
+
+
+def test_coverage_splits_at_dropouts():
+    times = np.concatenate([np.arange(0.0, 5.0, 0.5), np.arange(8.0, 12.0, 0.5)])   # nothing from 4.5 to 8
+    ts = TimeSeries(times=times, values=np.zeros(len(times)))
+
+    assert ts.coverage().tolist() == [[0.0, 4.5], [8.0, 11.5]]
+
+
+def test_a_short_pause_is_not_a_gap_but_a_long_one_is():
+    times = np.array([0.0, 1.0, 2.0, 3.0, 5.5, 6.5, 7.5])         # spacing 1 s, one 2.5 s step
+    ts = TimeSeries(times=times, values=np.zeros(7))
+
+    assert len(ts.coverage(gap_factor=3.0)) == 1                  # 2.5x typical: still one run
+    assert len(ts.coverage(gap_factor=2.0)) == 2                  # but a stricter factor splits it
+
+
+def test_coverage_of_empty_and_tiny_series():
+    assert TimeSeries(times=np.array([]), values=np.array([])).coverage().shape == (0, 2)
+    assert TimeSeries(times=np.array([4.0, 5.0]), values=np.zeros(2)).coverage().tolist() == [[4.0, 5.0]]
