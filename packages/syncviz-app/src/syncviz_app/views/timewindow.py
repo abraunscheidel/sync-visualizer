@@ -53,7 +53,14 @@ class TimeWindowView(View):
         viewbox = self.plot.getPlotItem().vb
         if not viewbox.sceneBoundingRect().contains(event.scenePos()):
             return
-        self.context.bus.publish(Seek(float(viewbox.mapSceneToView(event.scenePos()).x())))
+        self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()))
+
+    def seek_from_time(self, time: float) -> bool:
+        """Move the playhead to a clicked time, unless it is not allowed (see Timeline.allows)."""
+        if not self.context.timeline.allows(time):
+            return False
+        self.context.bus.publish(Seek(time))
+        return True
 
     def set_window(self, time: float) -> tuple[float, float]:
         lo, hi = time - self.window_seconds / 2, time + self.window_seconds / 2

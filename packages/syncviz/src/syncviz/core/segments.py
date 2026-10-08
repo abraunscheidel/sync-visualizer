@@ -145,6 +145,14 @@ class SegmentNavigator:
         """Whether the playhead is currently kept inside the matching segments."""
         return self._skip_hidden and self.filtered
 
+    def allows(self, time: float) -> bool:
+        """Whether the playhead may be at `time`: anywhere when not restricting, otherwise only
+        inside a matching segment."""
+        if not self.restricting:
+            return True
+        i = int(np.searchsorted(self._visible_starts, time, side="right")) - 1
+        return i >= 0 and time < self._visible_stops[i]
+
     def resolve(self, time: float, previous: float) -> float:
         """The timeline's constraint: while restricting, nothing may move the playhead outside the
         segments that match the filter, whether it is playback, stepping, clicking or dragging.
@@ -153,11 +161,9 @@ class SegmentNavigator:
         the end of the previous one when moving backward, and to the end of the last match when
         nothing matching lies ahead.
         """
-        if not self.restricting:
+        if self.allows(time):
             return time
         i = int(np.searchsorted(self._visible_starts, time, side="right")) - 1     # last match starting at or before time
-        if i >= 0 and time < self._visible_stops[i]:
-            return time
         if time >= previous:                                                         # moving forward (or staying put)
             if i + 1 < len(self._visible):
                 return float(self._visible_starts[i + 1])

@@ -365,9 +365,15 @@ The navigator also follows the playhead:
 - **The filter says which segments match; a switch decides whether movement is restricted
   to them.** Restricted (the default), *every* way of moving the playhead stays inside the
   matching segments: previous/next, playback, stepping by frame, clicking or dragging on the
-  timeline, clicking in a plot. A position outside them moves to the start of the next
-  matching segment when going forward, the end of the previous one when going backward, and
-  the end of the last match when nothing matching lies ahead (playback then pauses).
+  timeline, clicking in a plot.
+  *Pointer gestures aimed at a disabled region are ignored.* Hidden segments keep their place
+  on the strip (so the sense of when things happened is preserved) but are hatched, the
+  cursor changes to a "not allowed" symbol over them, and a drag across one leaves the
+  playhead where it was until the pointer reaches a match again. No tooltip is needed.
+  *Movement with no pointer position* (previous/next, stepping, playback) instead goes to the
+  nearest allowed time: the start of the next matching segment when going forward, the end of
+  the previous one when going backward, and the end of the last match when nothing matching
+  lies ahead (playback then pauses).
   Unrestricted, none of them is, and the filter only marks which segments match: the
   timeline highlights them, the count shows how many, and a current segment that does not
   match is labelled "not in filter". Without a filter nothing is restricted.
@@ -1116,7 +1122,9 @@ result cannot be reached. A label shows "N of M match". Changing a filter applie
 immediately; if it hides the current segment the navigator moves to the next match after
 the playhead, and leaves the playhead alone when the current segment still matches. A
 checkbox, always available, decides whether movement is restricted to the matches (see
-section 10.1); the timeline strip highlights matching segments and dims the rest.
+section 10.1); the timeline strip highlights matching segments, and while movement is
+restricted hatches the rest as disabled (they stay in place, so time on the strip stays
+proportional to time in the session).
 
 **Controls.** The top row holds playback and two clearly separate ways of moving, each with
 its own caption: **Segment** (previous and next, such as trials) and **Frame** (step by a

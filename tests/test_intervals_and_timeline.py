@@ -527,3 +527,17 @@ def test_stepping_between_segments_visits_everything_when_unrestricted_and_only_
     nav.select(0)
     bus.publish(StepSegment(+1))
     assert nav.index == 2                      # only the matches
+
+
+def test_the_timeline_and_navigator_say_which_times_are_allowed():
+    bus, tl, nav = make_following_navigator()
+    assert tl.allows(15.0) and tl.allows(9.5)                 # no filter: anywhere
+
+    nav.filter(stimulus="convex")                             # matches: 0-9 and 20-29
+    assert tl.allows(5.0) and tl.allows(25.0)
+    assert not tl.allows(15.0)                                # a hidden segment
+    assert not tl.allows(9.5)                                 # the gap between segments
+    assert not tl.allows(29.0)                                # a stop is exclusive
+
+    nav.skip_hidden = False
+    assert tl.allows(15.0)                                    # not restricting any more

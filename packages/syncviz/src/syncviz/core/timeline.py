@@ -16,6 +16,9 @@ from syncviz.core.actions import ActionBus, SelectTimeRange, Seek, SetPlaying
 
 
 class Constraint(Protocol):
+    def allows(self, time: float) -> bool:
+        """Whether the playhead may be at `time`."""
+
     def resolve(self, time: float, previous: float) -> float:
         """Where the playhead should actually go when asked to move from `previous` to `time`.
 
@@ -50,6 +53,12 @@ class Timeline:
 
     def _clamp(self, t: float) -> float:
         return min(max(t, self.start), self.stop)
+
+    def allows(self, time: float) -> bool:
+        """Whether the playhead may be at `time`. Pointer gestures check this and ignore a target
+        that is not allowed, which is how disabled regions behave; relative moves (stepping,
+        playback) instead go through the constraint's `resolve` and jump to the nearest allowed time."""
+        return self.constraint is None or self.constraint.allows(time)
 
     def _allowed(self, time: float) -> float:
         time = self._clamp(time)

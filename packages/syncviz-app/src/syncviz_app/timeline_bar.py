@@ -12,7 +12,7 @@ import bisect
 import time
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from syncviz.core import Seek
@@ -123,12 +123,20 @@ class TimelineBar(QWidget):
             iv = nav.intervals
             matching = QColor("#4fa3e0"); matching.setAlpha(95)
             dimmed = QColor(text); dimmed.setAlpha(8)
+            hatch = QColor(text); hatch.setAlpha(70)
             for i in range(len(iv)):
                 x0, x1 = self._x_of(iv.starts[i]), self._x_of(iv.stops[i])
                 if x1 < MARGIN or x0 > self.width() - MARGIN:
                     continue
                 if nav.filtered:                  # matches stand out; the rest recede
-                    p.fillRect(QRectF(x0, top, max(x1 - x0 - 0.5, 1), groove_h), matching if nav.is_match(i) else dimmed)
+                    rect = QRectF(x0, top, max(x1 - x0 - 0.5, 1), groove_h)
+                    if nav.is_match(i):
+                        p.fillRect(rect, matching)
+                    elif nav.restricting:         # unreachable while restricted: hatched like a disabled control
+                        p.fillRect(rect, dimmed)
+                        p.fillRect(rect, QBrush(hatch, Qt.BrushStyle.BDiagPattern))
+                    else:
+                        p.fillRect(rect, dimmed)
                 elif i % 2 == 0:
                     p.fillRect(QRectF(x0, top, max(x1 - x0, 1), groove_h), band)
             x0, x1 = self._x_of(nav.bounds[0]), self._x_of(nav.bounds[1])
@@ -161,8 +169,28 @@ class TimelineBar(QWidget):
         p.drawLine(int(x), 2, int(x), top + groove_h + 2)
 
     # -- interaction ---------------------------------------------------------------------
+    def seek_from_x(self, x: float) -> bool:
+        """Move the playhead to the time at pixel `x`, unless that time is not allowed (a segment the
+        filter hides, while movement is restricted to matches). A disabled region ignores the
+        gesture, so a drag across it leaves the playhead where it was."""
+        t = self._time_at(x)
+        if not self.context.timeline.allows(t):
+            return False
+        self.context.bus.publish(Seek(t))
+        return True
+
+    def cursor_at(self, x: float, y: float) -> Qt.CursorShape:
+        """Pointing hand where a click would move the playhead, a "not allowed" symbol over a
+        disabled part of the bar (a segment the filter hides, while movement is restricted)."""
+        t = self._time_at(x)
+        tl = self.context.timeline
+        over_groove = GROOVE_TOP <= y <= GROOVE_TOP + GROOVE_HEIGHT
+        if over_groove and tl.start <= t <= tl.stop and not tl.allows(t):
+            return Qt.CursorShape.ForbiddenCursor
+        return Qt.CursorShape.PointingHandCursor
+
     def _seek_to(self, event) -> None:
-        self.context.bus.publish(Seek(self._time_at(event.position().x())))
+        self.seek_from_x(event.position().x())
         self.update()                    # dragging must feel immediate, so this bypasses the throttle
 
     def mousePressEvent(self, event) -> None:
@@ -174,7 +202,9 @@ class TimelineBar(QWidget):
             QToolTip.hideText()
             self._seek_to(event)
             return
-        tip = self.tooltip_at(event.position().x(), event.position().y())
+        position = event.position()
+        self.setCursor(self.cursor_at(position.x(), position.y()))
+        tip = self.tooltip_at(position.x(), position.y())        # the data-coverage lines only
         if tip:
             QToolTip.showText(event.globalPosition().toPoint(), tip, self)
         else:

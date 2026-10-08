@@ -318,3 +318,71 @@ def test_the_navigation_sections_are_named_generically_and_the_items_use_the_con
     assert "Segment" in captions and "Frame" in captions
     assert "Block" not in captions                    # the configured label is for items, not section headings
     assert nav_bar.segment_label.text().strip().startswith("Block 10")
+
+
+# --- pointer gestures on disabled regions -----------------------------------------------------
+
+def _restrict_to_convex(window):
+    box = window.filter_bar._filters["stimulus"]
+    box.setCurrentIndex(next(i for i in range(box.count()) if box.itemData(i) == "convex"))
+    assert window.context.navigator.restricting
+
+
+def test_clicking_a_hidden_segment_does_nothing_and_a_matching_one_goes_exactly_there(window):
+    _restrict_to_convex(window)                    # matches: 0-1.5 s and 3-5 s; hidden: 1.5-3 s
+    bar, tl = window.timeline_bar, window.context.timeline
+    window.context.bus.publish(Seek(0.5))
+
+    assert bar.seek_from_x(bar._x_of(2.0)) is False            # hidden
+    assert tl.time == 0.5
+
+    assert bar.seek_from_x(bar._x_of(4.0)) is True             # matching
+    assert tl.time == pytest.approx(4.0)
+
+
+def test_dragging_across_a_hidden_segment_leaves_the_playhead_where_it_was_until_a_match_is_reached(window):
+    _restrict_to_convex(window)
+    bar, tl = window.timeline_bar, window.context.timeline
+    window.context.bus.publish(Seek(0.5))
+    seen = []
+
+    for t in (0.8, 1.2, 1.7, 2.2, 2.8, 3.4, 4.2):               # a drag from left to right
+        bar.seek_from_x(bar._x_of(t))
+        seen.append(round(tl.time, 2))
+
+    assert seen == [0.8, 1.2, 1.2, 1.2, 1.2, 3.4, 4.2]          # stuck at the last allowed point, then follows
+
+
+def test_the_cursor_shows_whether_a_click_would_work(window):
+    from PySide6.QtCore import Qt
+    from syncviz_app import timeline_bar as tb
+    _restrict_to_convex(window)
+    bar = window.timeline_bar
+    y = tb.GROOVE_TOP + tb.GROOVE_HEIGHT / 2
+
+    assert bar.cursor_at(bar._x_of(2.0), y) == Qt.CursorShape.ForbiddenCursor       # hidden by the filter
+    assert bar.cursor_at(bar._x_of(4.0), y) == Qt.CursorShape.PointingHandCursor    # a match
+    assert bar.cursor_at(bar._x_of(2.0), tb.ROWS_TOP + 2) == Qt.CursorShape.PointingHandCursor  # not over the bar itself
+
+    window.filter_bar.skip.setChecked(False)                                         # not restricting any more
+    assert bar.cursor_at(bar._x_of(2.0), y) == Qt.CursorShape.PointingHandCursor
+    assert bar.seek_from_x(bar._x_of(2.0)) is True
+
+
+def test_no_tooltip_appears_over_disabled_parts_of_the_bar(window):
+    from syncviz_app import timeline_bar as tb
+    _restrict_to_convex(window)
+    bar = window.timeline_bar
+
+    assert bar.tooltip_at(bar._x_of(2.0), tb.GROOVE_TOP + tb.GROOVE_HEIGHT / 2) is None
+
+
+def test_clicking_in_a_plot_follows_the_same_rule(window):
+    _restrict_to_convex(window)
+    plot = next(v for v in window.views if v.type_name == "timeseries")
+    window.context.bus.publish(Seek(0.5))
+
+    assert plot.seek_from_time(2.0) is False
+    assert window.context.timeline.time == 0.5
+    assert plot.seek_from_time(4.0) is True
+    assert window.context.timeline.time == 4.0
