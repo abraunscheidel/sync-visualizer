@@ -402,7 +402,7 @@ class CollectionBar(QToolBar):
             box = saved_in_workspace(QComboBox())
             box.addItem(ALL, None)
             for value in values:
-                box.addItem(str(value), value)
+                box.addItem(project.show_attribute(attribute, value), value)
             self.addWidget(QLabel(f"  {project.attribute_names(attribute)[0]}: "))
             self.addWidget(box)
             self._filters[attribute] = box
@@ -439,7 +439,7 @@ class CollectionBar(QToolBar):
                     box.setItemText(i, f"{ALL} ({kinds} {one if kinds == 1 else many})")
                 else:                              # a value counts the collections it leaves (sessions)
                     noun = (project.collection_label if n == 1 else project.collection_plural).lower()
-                    box.setItemText(i, f"{value} ({n} {noun})")
+                    box.setItemText(i, f"{project.show_attribute(attribute, value)} ({n} {noun})")
                 model.item(i).setEnabled(n > 0 or i == box.currentIndex())
 
     def _refresh_picker(self) -> None:

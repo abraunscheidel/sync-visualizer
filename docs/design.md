@@ -2282,14 +2282,30 @@ action, never hardcoded in the core. The ideas in 16.2 become ordinary actions r
 * Views return targets only; they never format details. The core presents what the source supplies.
 * Operational information (sync diagnostics) stays a core component and is not mixed into details.
 
-**Status.** Steps 1 and 2 are built. Step 1: `syncviz/inspection.py` (Target, Scope, Field, Details, statistics by resource
+**Status.** Steps 1 to 3 are built. Step 1: `syncviz/inspection.py` (Target, Scope, Field, Details, statistics by resource
 type), `syncviz_app/inspector.py`, `View.target_at` and hover on the indicator lights, the tracks view and the time series
-view. Step 2: `Selection` (one shared item), left click selects (tile outlined, row band, thicker line) and a double click
-seeks, the docked Details panel (`details_panel.py`) with every field and a per-figure "On hover" tick saved in the
-workspace (`settings.inspection.hover`), and the optional `Source.details(target)` hook for facts only a data format knows.
-Where a click lands on nothing selectable it still seeks. Backlog: hover and selection on the video overlays; hover and
-selection for processed series such as the population rate (needs its own design: they have no source reference);
-the unified action registry and context menu (step 3); selection-bound and temporary views (step 4).
+view. Step 2: `Selection` (one shared item), the docked Details panel (`details_panel.py`) with every field and a per-figure
+"On hover" tick saved in the workspace (`settings.inspection.hover`), and the optional `Source.details(target)` hook. Step 3:
+`target_actions.py`, the action registry. Built in: Select, Go to this time (the item's own moment, else the time under the
+pointer, plus the view's delay), Copy details, Clear selection (Esc), Show details and Open as view (a submenu built from each
+view type's `spec_for(target)`, which adds the view to the views list). Views add their own by overriding
+`View.target_actions`; plugins can register more. Right-click on an item in a view opens the menu for it. A click and a double
+click run the actions the project binds with `interaction: {click: select, double_click: seek}`; where a click lands on
+nothing selectable it still seeks. `Target.at` is the time under the pointer and does not make two targets different items.
+Backlog: hover and selection on the video overlays; hover and selection for processed series such as the population rate
+(needs its own design: they have no source reference); a temporary Open as view that can be pinned, and selection-bound
+views (step 4); the jump/clip/event-filter actions of 16.2.
+
+### 28.8 Dates and times
+
+One standard, in `syncviz/formatting.py`: ISO 8601 for display, `2023-04-15` for a date and `2023-04-15 10:15` (24-hour, plus
+the zone if the data has one) for a date and time. `parse_datetime` reads the year-first spellings data comes in (`20230415`,
+`2023_04_15`, `20230415T101530`, with an optional zone); day-first and month-first forms are ambiguous and are never guessed.
+A project chooses another display with `display: {date: iso, datetime: iso}`, each a preset (`iso`, `us`, `eu`, `long`,
+`short`) or a `strftime` pattern. Which collection attributes are dates is stated in `collections: {attribute_types: {day:
+date}}`; the dropdowns then show them in the chosen form while filtering on the stored value, and `collections: {title:
+"{mouse} · {date}"}` names sessions in the picker by their attributes. Dates in a file's metadata (the details panel) use the
+same display. Anything that shows a date to a person should go through `DateFormat.show`.
 
 **Order of building.** (1) target and details contract, with hover on the existing views; (2) selection and the detail panel;
 (3) actions and the context menu; (4) selection-bound and temporary views.

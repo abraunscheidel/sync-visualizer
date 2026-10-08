@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from syncviz.inspection import Target
 from syncviz.sources import DataEntry
 from syncviz_app.context import AppContext
+from syncviz_app.target_actions import build_menu
 
 
 def describe_delay(milliseconds: float, sentence: bool = False) -> str:
@@ -110,9 +111,28 @@ class View(QWidget):
         return None
 
     def enable_hover(self, *widgets: QWidget) -> None:
-        """Show the inspector's tooltip for what is under the pointer in these child widgets."""
+        """Show the inspector's tooltip, and the context menu, for what is under the pointer in these child widgets."""
         for widget in widgets:
             widget.installEventFilter(self)
+
+    def target_actions(self) -> list:
+        """Actions this view adds for the items it shows (`TargetAction`s), beside the ones every item gets."""
+        return []
+
+    @classmethod
+    def spec_for(cls, target: Target) -> dict | None:
+        """The spec of a view of this type that would show `target`, or None if this type cannot show it. This is
+        what lets "Open as view" offer every way a target can be visualized."""
+        return None
+
+    def show_menu(self, pos: QPoint, global_pos) -> None:
+        """The context menu: the actions that apply to what is under `pos`."""
+        registry = self.context.actions
+        target = self.target_at(pos) if registry is not None else None
+        if target is not None:
+            actions = registry.for_target(target)
+            if actions:
+                build_menu(actions, target, self, self).exec(global_pos)
 
     def hover_text(self, pos: QPoint) -> str:
         inspector = self.context.inspector
@@ -120,6 +140,9 @@ class View(QWidget):
         return "" if target is None else inspector.hover_text(target)
 
     def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.ContextMenu:
+            self.show_menu(self.mapFromGlobal(event.globalPos()), event.globalPos())
+            return True
         if event.type() == QEvent.Type.ToolTip:
             text = self.hover_text(self.mapFromGlobal(event.globalPos()))
             if text:

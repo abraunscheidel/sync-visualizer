@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from datetime import date, datetime
+
 import numpy as np
+
+from syncviz.formatting import DEFAULT as DEFAULT_DATES, DateFormat
 
 from syncviz.resources.events import EventSeries
 from syncviz.resources.intervals import IntervalSeries
@@ -25,6 +29,7 @@ class Target:
     member: str | None = None     # which part of a container
     label: str = ""               # the name the interface shows
     time: float | None = None     # a specific moment, when the target is one (a single event, a point on a trace)
+    at: float | None = field(default=None, compare=False)    # the time under the pointer, for a view with a time axis
 
     @property
     def ref(self) -> str:
@@ -112,7 +117,7 @@ def _scoped_range(scope: Scope, lo: float, hi: float) -> tuple[float, float]:
     return a, max(b, a)
 
 
-def event_fields(series: EventSeries, scope: Scope = WHOLE) -> list[Field]:
+def event_fields(series: EventSeries, scope: Scope = WHOLE, dates: DateFormat = DEFAULT_DATES) -> list[Field]:
     """Counts and rates of an event series, in `scope`, and the metadata the source attached."""
     out: list[Field] = []
     times = series.times
@@ -128,7 +133,7 @@ def event_fields(series: EventSeries, scope: Scope = WHOLE) -> list[Field]:
             out.append(Field("Events (whole recording)", str(len(times)), "Statistics", key="events_all"))
     else:
         out.append(Field("Events", "0", "Statistics", brief=True, key="events"))
-    out += metadata_fields(series.metadata)
+    out += metadata_fields(series.metadata, dates)
     return out
 
 
@@ -165,12 +170,14 @@ def timeseries_fields(series, scope: Scope = WHOLE) -> list[Field]:
     return out
 
 
-def metadata_fields(metadata: dict) -> list[Field]:
+def metadata_fields(metadata: dict, dates: DateFormat = DEFAULT_DATES) -> list[Field]:
     """What the source attached to an item (a unit's depth and layer), shown as given."""
-    return [Field(str(k), _plain(v), "From the file", key=f"file:{k}") for k, v in metadata.items()]
+    return [Field(str(k), _plain(v, dates), "From the file", key=f"file:{k}") for k, v in metadata.items()]
 
 
-def _plain(value) -> str:
+def _plain(value, dates: DateFormat = DEFAULT_DATES) -> str:
+    if isinstance(value, (datetime, date)):
+        return dates.show(value)
     if isinstance(value, (float, np.floating)):
         return _number(float(value))
     return str(value)

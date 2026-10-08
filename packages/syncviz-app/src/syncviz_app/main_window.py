@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
+from syncviz import plugins
 from syncviz_app.details_panel import DetailsPanel
+from syncviz_app.target_actions import TargetAction
 from syncviz_app.loading import LoadingScreen, run_in_background
 from PySide6.QtWidgets import QDialog, QDockWidget, QMainWindow, QSplitter, QVBoxLayout, QWidget
 
@@ -98,6 +100,7 @@ class MainWindow(QMainWindow):
         details_dock.setObjectName("details")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)
         self.details_dock = details_dock
+        self._register_target_actions()
 
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
         self.view_host.setWindowFlags(Qt.WindowType.Widget)
@@ -169,6 +172,38 @@ class MainWindow(QMainWindow):
         if self.views_panel is not None:
             self.views_panel.sync()
         self._apply_settings(saved.settings)
+
+    def _register_target_actions(self) -> None:
+        """The actions that need the window: showing the Details panel, opening a target as a view, and those of the views."""
+        registry = self.context.actions
+
+        def show_details(target, _origin) -> None:
+            self.context.selection.set(target)
+            self.details_dock.show()
+            self.details_dock.raise_()
+
+        def ways_to_open(target) -> list[TargetAction]:
+            out = []
+            for name in sorted(plugins.available("views")):
+                try:
+                    view_class = plugins.load("views", name)
+                    spec = view_class.spec_for(target)
+                except Exception:
+                    continue
+                if spec:
+                    out.append(TargetAction(f"open_as_view:{name}", view_class.display_name or name,
+                                            lambda _t, _o, spec=spec: self.add_view(spec)))
+            return out
+
+        registry.register(TargetAction("show_details", "Show details", show_details,
+                                       description="Select this and bring up the Details panel"))
+        registry.register(TargetAction("open_as_view", "Open as view", children=ways_to_open,
+                                       description="Add a view that shows this"))
+        registry.add_provider(lambda: [a for view in self.views for a in view.target_actions()])
+        for action in registry.all():                                  # keyboard shortcuts act on the selection
+            if action.shortcut:
+                shortcut = QShortcut(QKeySequence(action.shortcut), self)
+                shortcut.activated.connect(lambda a=action: registry.run(a.id, self.context.selection.target, None))
 
     def settings(self) -> dict:
         """The working state apart from the arrangement: filters, frame step and speed."""

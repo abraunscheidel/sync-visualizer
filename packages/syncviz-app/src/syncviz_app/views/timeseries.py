@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pyqtgraph as pg
 
@@ -35,6 +37,13 @@ class TimeSeriesView(TimeWindowView):
                 out.append(Candidate(label, {"type": cls.type_name, "title": title, "series": series}))
         return out
 
+    @classmethod
+    def spec_for(cls, target):
+        if target.kind != "timeseries":
+            return None
+        name = target.label or target.member or target.path.rsplit("/", 1)[-1]
+        return {"type": cls.type_name, "title": name, "series": {"from": target.ref, "member": target.member}}
+
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         series_spec = spec["series"]
@@ -60,7 +69,7 @@ class TimeSeriesView(TimeWindowView):
             self.plot.setYRange(lo - pad, hi + pad, padding=0)
 
     def target_at(self, pos):
-        return self.target
+        return None if self.target is None else replace(self.target, at=self.time_at(pos))
 
     def selection_changed(self) -> None:
         self.curve.setPen(pg.mkPen("#4fa3e0", width=3 if self.is_selected(self.target) else 1.5))

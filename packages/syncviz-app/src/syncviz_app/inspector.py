@@ -45,7 +45,7 @@ class Inspector:
         try:
             resources = self.context.resources
             if target.kind == "events":
-                details.fields = event_fields(resources.events(target.ref, target.member), scope)
+                details.fields = event_fields(resources.events(target.ref, target.member), scope, self.context.dates)
             elif target.kind == "intervals":
                 details.fields = interval_fields(resources.intervals(target.ref), scope)
             elif target.kind == "timeseries":
@@ -65,6 +65,16 @@ class Inspector:
 
     def shown_on_hover(self, field: Field) -> bool:
         return field.brief if self.hover_keys is None else field.key in self.hover_keys
+
+    def full_text(self, target: Target) -> str:
+        """Everything known about the target as plain text, for copying."""
+        details = self.details(target)
+        lines = [details.title, f"Statistics over: {details.scope.label}"]
+        if details.description:
+            lines += ["", details.description]
+        lines.append("")
+        lines += [f"{f.name}: {f.value}" for f in details.fields]
+        return "\n".join(lines)
 
     def hover_text(self, target: Target) -> str:
         """The tooltip: title, description, and the brief statistics."""

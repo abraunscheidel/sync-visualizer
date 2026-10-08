@@ -8,6 +8,8 @@ from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL, Shifted
 from syncviz_app.inspector import Inspector
+from syncviz_app.keys import DEFAULT_KEYS
+from syncviz_app.target_actions import ActionRegistry
 from syncviz_app.context import AppContext
 from syncviz_app.workspace import DEFAULT_NAME, workspaces_dir, load_workspace
 from syncviz_app.main_window import MainWindow
@@ -38,7 +40,9 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
                          collection=project.collection, collection_label=project.collection_label,
                          glossary={str(k): str(v) for k, v in (project.config.get("glossary") or {}).items()})
 
+    context.dates = project.dates
     context.inspector = Inspector(context)
+    context.actions = ActionRegistry(context, project.config.get("interaction"), DEFAULT_KEYS)
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():

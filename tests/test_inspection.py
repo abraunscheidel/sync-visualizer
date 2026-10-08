@@ -251,3 +251,120 @@ def test_a_source_can_add_facts_only_it_knows(window):
     view.select_at(_tile_centre(view, "Unit 12 · L5b"))
     values = _values(window.context.inspector.details(window.context.selection.target).fields)
     assert values["Isolation"] == "good"
+
+
+# -- actions and the context menu (step 3) -----------------------------------------------------------------------
+def _tracks(window):
+    candidate = next(c for c in TracksView.candidates(window.source_catalog()) if c.spec["title"] == "Units")
+    view = window.add_view(candidate.spec)
+    view.resize(800, 400)
+    view.refresh(3.0)
+    QApplication.instance().processEvents()
+    return view
+
+
+def _labels(actions):
+    return [a.label for a in actions]
+
+
+def test_a_target_is_offered_only_the_actions_that_apply_to_it(window):
+    registry = window.context.actions
+    row = Target("session", "units", "events", "12", "Unit 12")
+    labels = _labels(registry.for_target(row))
+    assert "Select" in labels and "Copy details" in labels and "Show details" in labels
+    assert "Go to this time" not in labels                          # a whole row has no moment of its own
+    assert "Clear selection" not in labels                           # and it is not selected
+    moment = Target("session", "units", "events", "12", "Unit 12", time=3.0)
+    assert "Go to this time" in _labels(registry.for_target(moment))
+    window.context.selection.set(row)
+    assert "Clear selection" in _labels(registry.for_target(row))
+
+
+def test_open_as_view_is_a_submenu_listing_each_way_the_target_can_be_shown(window):
+    registry = window.context.actions
+    events = registry.get("open_as_view")
+    names = _labels(events.children(Target("session", "units", "events", "12", "Unit 12")))
+    assert {"Events and intervals", "Indicator lights"} <= set(names) and "Time series plot" not in names
+    series = _labels(events.children(Target("session", "processing/behavior/whisker", "timeseries", "angle", "Angle")))
+    assert series == ["Time series plot"]
+    assert events.children(Target("session", "x", "points", None, "pose")) == []
+
+
+def test_opening_a_target_as_a_view_adds_that_view(window):
+    before = len(window.views)
+    registry = window.context.actions
+    target = Target("session", "units", "events", "12", "Unit 12")
+    child = next(a for a in registry.get("open_as_view").children(target) if a.label == "Indicator lights")
+    child.run(target, None)
+    assert len(window.views) == before + 1 and window.views[-1].type_name == "indicators"
+    assert window.views[-1].rows[0]["name"] == "Unit 12"
+
+
+def test_the_menu_is_built_from_the_registry_with_a_submenu_and_its_shortcut_shown(window):
+    from PySide6.QtWidgets import QMenu
+    from syncviz_app.target_actions import build_menu
+    registry = window.context.actions
+    target = Target("session", "units", "events", "12", "Unit 12")
+    window.context.selection.set(target)
+    menu = build_menu(registry.for_target(target), target, None)
+    texts = {a.text().split("\t")[0] for a in menu.actions()}
+    assert {"Select", "Show details", "Open as view", "Copy details", "Clear selection"} <= texts
+    assert next(a for a in menu.actions() if a.text().startswith("Open as view")).menu().actions()
+    assert next(a for a in menu.actions() if a.text().startswith("Clear")).text().endswith("Esc")
+
+
+def test_the_context_menu_of_a_view_is_for_what_is_under_the_pointer(window, monkeypatch):
+    view = _units(window)
+    view.resize(600, 400)
+    shown = []
+    import syncviz_app.views.base as base
+    monkeypatch.setattr(base, "build_menu", lambda actions, target, origin, parent: type(
+        "M", (), {"exec": lambda self, pos: shown.append((target.member, [a.label for a in actions]))})())
+    view.show_menu(_tile_centre(view, "Unit 12 · L5b"), None)
+    view.show_menu(QPoint(-5, -5), None)                              # nothing there: no menu
+    assert len(shown) == 1 and shown[0][0] == "12" and "Select" in shown[0][1]
+
+
+def test_clicks_run_the_actions_the_project_binds_to_them(window):
+    window.context.actions.bindings["click"] = "show_details"
+    window.context.actions.bindings["double_click"] = "copy_details"
+    view = _units(window)
+    view.resize(600, 400)
+    view._pressed(view.lamps.mapFrom(view, _tile_centre(view, "Unit 12 · L5b")), False)
+    assert window.context.selection.target.member == "12"
+    view._pressed(view.lamps.mapFrom(view, _tile_centre(view, "Unit 12 · L5b")), True)
+    assert "Unit 12" in QApplication.clipboard().text()
+
+
+def test_a_view_can_add_its_own_actions_and_they_apply_only_where_it_says(window):
+    from syncviz_app.target_actions import TargetAction
+    ran = []
+    view = _units(window)
+    view.target_actions = lambda: [TargetAction("jump", "Jump to next occurrence", lambda t, o: ran.append(t.member),
+                                                applies=lambda t: t.kind == "events")]
+    registry = window.context.actions
+    assert "Jump to next occurrence" in _labels(registry.for_target(Target("session", "units", "events", "12")))
+    assert "Jump to next occurrence" not in _labels(registry.for_target(Target("session", "x", "intervals")))
+    assert registry.run("jump", Target("session", "units", "events", "12")) and ran == ["12"]
+
+
+def test_seeking_from_the_pointer_time_on_a_shifted_view_adds_its_lag(window):
+    view = next(v for v in window.views if v.title == "Angle")
+    window.set_view_lag(view, 500.0)
+    target = Target("session", "p", "timeseries", "angle", "Angle", at=2.0)
+    assert window.context.actions.run("seek", target, view)
+    assert window.context.timeline.time == pytest.approx(2.5)
+
+
+def test_escape_clears_the_selection(window):
+    from PySide6.QtGui import QShortcut
+    window.context.selection.set(Target("session", "units", "events", "12", "Unit 12"))
+    shortcut = next(s for s in window.findChildren(QShortcut) if s.key().toString() == "Esc")
+    shortcut.activated.emit()
+    assert window.context.selection.target is None
+
+
+def test_the_time_under_the_pointer_does_not_make_two_targets_different_items(window):
+    a = Target("session", "units", "events", "12", at=1.0)
+    b = Target("session", "units", "events", "12", at=2.0)
+    assert a == b

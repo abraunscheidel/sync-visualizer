@@ -31,9 +31,16 @@ collections:
   attributes:
     mouse: 'sub-([^_/]+)_'
     date: 'ses-(\d{8})'
+  title: "{mouse} · {date}"     # how the picker names a session; dates are shown as the display setting below
+  attribute_types: {date: date}   # so the dropdown shows 2023-04-15, not 20230415
   attribute_labels:               # how the dropdowns name an attribute, singular and plural
     mouse: {label: Mouse, plural: mice}
     date: {label: Date, plural: dates}
+
+# How dates and times are shown: iso (2023-04-15, the default), us, eu, long, short, or a strftime pattern such as "%d %b %Y".
+display:
+  date: iso
+  datetime: iso
 
 # The core only knows "segments" (intervals you can step through). The label is
 # display text; "Trial" is this experiment's name for them.

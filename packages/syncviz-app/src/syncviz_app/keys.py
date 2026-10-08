@@ -13,4 +13,5 @@ DEFAULT_KEYS: dict[str, str] = {
     "next_collection": "Ctrl+Right",
     "step_back": "Shift+Left",
     "step_forward": "Shift+Right",
+    "clear_selection": "Esc",
 }

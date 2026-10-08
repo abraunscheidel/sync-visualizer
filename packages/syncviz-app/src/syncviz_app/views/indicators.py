@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from syncviz_app.views.base import View
 from syncviz_app.views.rows import (
-    extent_of, glow_after_events, glow_during_intervals, load_row_data, row_candidates, row_target,
+    extent_of, glow_after_events, glow_during_intervals, load_row_data, row_candidates, row_spec_for, row_target,
 )
 
 DEFAULT_DECAY_S = 0.15
@@ -36,7 +36,7 @@ class _Lamps(QWidget):
         self.columns = None if columns is None else max(int(columns), 1)     # None: pick the best fit
         self.levels = np.zeros(len(labels))
         self.selected: int | None = None                  # the tile of the selected item, outlined
-        self.on_press = None                              # called with a point; the view selects what is there
+        self.on_press = None                              # called with (point, double); the view acts on what is there
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(120, 60)
 
@@ -66,7 +66,11 @@ class _Lamps(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.on_press is not None:
-            self.on_press(event.position().toPoint())
+            self.on_press(event.position().toPoint(), False)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.on_press is not None:
+            self.on_press(event.position().toPoint(), True)
 
     def set_selected(self, index: int | None) -> None:
         if index != self.selected:
@@ -120,6 +124,10 @@ class IndicatorsView(View):
     def candidates(cls, catalog):
         return row_candidates(catalog, cls.type_name)
 
+    @classmethod
+    def spec_for(cls, target):
+        return row_spec_for(cls.type_name, target)
+
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         self.decay = float(spec.get("decay", DEFAULT_DECAY_S))
@@ -133,7 +141,12 @@ class IndicatorsView(View):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.lamps)
         self.enable_hover(self.lamps)
-        self.lamps.on_press = lambda point: self.select_at(self.lamps.mapTo(self, point))
+        self.lamps.on_press = self._pressed
+
+    def _pressed(self, point, double: bool) -> None:
+        target = self.target_at(self.lamps.mapTo(self, point))
+        if target is not None:
+            self.context.actions.trigger("double_click" if double else "click", target, self)
 
     def selection_changed(self) -> None:
         self.lamps.set_selected(next((i for i, row in enumerate(self.rows) if self.is_selected(row_target(row["spec"]))), None))

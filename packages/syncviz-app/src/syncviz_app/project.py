@@ -20,6 +20,7 @@ import numpy as np
 
 from syncviz import plugins, processors
 from syncviz.resources import EventSeries, IntervalSeries, PointTracks, TimeSeries
+from syncviz.formatting import DateFormat
 from syncviz.catalog import Collection, discover, fill, has_unfilled
 from syncviz.sources import MissingDataError, Source
 
@@ -172,6 +173,16 @@ class Project:
         return str((self.config.get("collections") or {}).get("label") or "Collection")
 
     @property
+    def dates(self) -> DateFormat:
+        """How dates and times are shown: `display: {date: iso, datetime: iso}` in the project file (ISO 8601 by default)."""
+        return DateFormat.from_config(self.config.get("display"))
+
+    def show_attribute(self, attribute: str, value) -> str:
+        """An attribute of a collection written for people: a date as the project displays dates, anything else as it is.
+        Which attributes are dates is stated in `collections: {attribute_types: {date: date}}` (or `datetime`)."""
+        return show_attribute(self.config, attribute, value)
+
+    @property
     def collection_plural(self) -> str:
         spec = self.config.get("collections") or {}
         return str(spec.get("label_plural") or f"{self.collection_label}s")
@@ -230,6 +241,22 @@ class Project:
         self.active, self.resources, self.sources = index, resources, resources.sources
 
 
+def show_attribute(config: dict, attribute: str, value) -> str:
+    """An attribute of a collection written for people (see `Project.show_attribute`)."""
+    kind = ((config.get("collections") or {}).get("attribute_types") or {}).get(attribute)
+    return DateFormat.from_config(config.get("display")).show(value, kind) if kind in ("date", "datetime") else str(value)
+
+
+def _titled(template: str, collection: Collection, config: dict) -> str:
+    """A collection's title from a template whose `{names}` are its attributes (dates as displayed) or fields."""
+    class Known(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"
+
+    values = Known({**collection.fields, **{a: show_attribute(config, a, v) for a, v in collection.attributes.items()}})
+    return template.format_map(values)
+
+
 def load_project(path: str | Path, collection: str | None = None) -> Project:
     """Read a project file and find its collections (nothing is read from any source yet).
     `collection` is the key of the one to open first (else the file's `collection:`, else the first)."""
@@ -243,6 +270,9 @@ def load_project(path: str | Path, collection: str | None = None) -> Project:
             raise ValueError(f"no {spec.get('label', 'collection').lower()}s found by {spec['from']}")
     else:
         collections = [Collection("default", str(config.get("name") or path.resolve().parent.name))]
+    template = spec.get("title") if spec else None
+    if template:                           # `title: "{mouse} · {date}"`: the picker names a collection by its attributes
+        collections = [Collection(c.key, _titled(template, c, config), c.fields, c.attributes) for c in collections]
     wanted = collection or config.get("collection")
     keys = [c.key for c in collections]
     if wanted is not None and wanted not in keys:

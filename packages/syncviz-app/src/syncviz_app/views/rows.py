@@ -33,6 +33,17 @@ def row_target(row: dict) -> Target:
     return Target(source, path, row["kind"], row.get("member"), row.get("name", ""))
 
 
+def row_spec_for(type_name: str, target: Target) -> dict | None:
+    """A view of `type_name` showing one row for `target`, if it is events or intervals."""
+    if target.kind not in ("events", "intervals"):
+        return None
+    name = target.label or target.member or target.path.rsplit("/", 1)[-1]
+    row = {"name": name, "kind": target.kind, "from": target.ref}
+    if target.member:
+        row["member"] = target.member
+    return {"type": type_name, "title": name, "rows": [row]}
+
+
 def extent_of(rows: Iterable[tuple[str, object]]) -> tuple[float, float] | None:
     """The span of time the rows' data covers, given `(kind, data)` pairs, or None if all are empty."""
     lows, highs = [], []

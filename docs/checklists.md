@@ -13,6 +13,8 @@ Things that are easy to forget when changing the app. Where possible a test enfo
 - [ ] **Shortcut:** if it has a keyboard shortcut, add it to the table in `keys.py` (so it can become configurable).
 - [ ] **Navigation rules:** if it moves the playhead, make sure it goes through the timeline's constraint, so the
   filter governs it (§10.1). Never set `timeline.time` directly.
+- [ ] **Dates:** anything that shows a date or time to a person goes through `DateFormat.show` (`syncviz/formatting.py`,
+  §28.8), never a raw string or an ad hoc `strftime`.
 - [ ] **Wording:** the core is generic. Names like "Trial" come only from the project's `label`; "frame" is always
   "frame".
 - [ ] **Tests:** one that fails without the change (check by temporarily breaking it), and offscreen only.

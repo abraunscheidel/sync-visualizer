@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pyqtgraph as pg
 
-from syncviz.inspection import Target
 
-from syncviz_app.views.rows import extent_of, load_row_data, row_candidates, row_target
+from syncviz_app.views.rows import extent_of, load_row_data, row_candidates, row_spec_for, row_target
 from syncviz_app.views.timewindow import TimeWindowView
 
 TICK_HALF_HEIGHT = 0.35
@@ -22,6 +23,10 @@ class TracksView(TimeWindowView):
     @classmethod
     def candidates(cls, catalog):
         return row_candidates(catalog, cls.type_name)
+
+    @classmethod
+    def spec_for(cls, target):
+        return row_spec_for(cls.type_name, target)
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
@@ -67,7 +72,7 @@ class TracksView(TimeWindowView):
         row = next((r for r in self.rows if abs(r["y"] - at.y()) <= 0.5), None)
         if row is None:
             return None
-        target = row_target(row["spec"])
+        target = replace(row_target(row["spec"]), at=float(at.x()))
         if row["kind"] == "events" and len(row["data"]):
             per_pixel = self.window_seconds / max(viewbox.sceneBoundingRect().width(), 1.0)
             times = row["data"]
@@ -75,7 +80,7 @@ class TracksView(TimeWindowView):
             near = [times[j] for j in (i - 1, i) if 0 <= j < len(times)]
             best = min(near, key=lambda t: abs(t - at.x()), default=None)
             if best is not None and abs(best - at.x()) <= HOVER_PIXELS * per_pixel:
-                target = Target(target.source, target.path, target.kind, target.member, target.label, float(best))
+                target = replace(target, time=float(best))
         return target
 
     def extent(self):

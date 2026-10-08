@@ -53,11 +53,19 @@ class TimeWindowView(View):
         viewbox = self.plot.getPlotItem().vb
         if not viewbox.sceneBoundingRect().contains(event.scenePos()):
             return
-        # A click selects what is under it; where there is nothing to select, or on a double click, it seeks.
-        # The click is in this view's time; the playhead is `lag` later.
-        if not event.double() and self.select_at(self.plot.mapTo(self, self.plot.mapFromScene(event.scenePos()))):
+        # What the project binds to a click (select) or double click (seek) happens to what is under the pointer; where
+        # there is nothing to act on, a click seeks. The click is in this view's time; the playhead is `lag` later.
+        pos = self.plot.mapTo(self, self.plot.mapFromScene(event.scenePos()))
+        target = self.target_at(pos)
+        if target is not None and self.context.actions.trigger("double_click" if event.double() else "click", target, self):
             return
         self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()) + self.lag)
+
+    def time_at(self, pos) -> float | None:
+        """The time on this view's axis under `pos` (this view's coordinates), or None outside the plot."""
+        scene = self.plot.mapToScene(self.plot.mapFrom(self, pos))
+        viewbox = self.plot.getPlotItem().vb
+        return float(viewbox.mapSceneToView(scene).x()) if viewbox.sceneBoundingRect().contains(scene) else None
 
     def seek_from_time(self, time: float) -> bool:
         """Move the playhead to a clicked time, unless it is not allowed (see Timeline.allows)."""
