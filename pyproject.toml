@@ -4,7 +4,7 @@
 name = "sync-visualizer-workspace"
 version = "0.0.0"
 requires-python = ">=3.11"
-dependencies = ["syncviz", "syncviz-nwb", "syncviz-video"]
+dependencies = ["syncviz", "syncviz-nwb", "syncviz-video", "syncviz-app"]
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -19,6 +19,7 @@ members = ["packages/*"]
 syncviz = { workspace = true }
 syncviz-nwb = { workspace = true }
 syncviz-video = { workspace = true }
+syncviz-app = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

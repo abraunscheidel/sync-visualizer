@@ -1,0 +1,22 @@
+"""Everything a view or control needs to take part in the application."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from syncviz.cache import DiskCache
+from syncviz.core import ActionBus, SegmentNavigator, Timeline
+from syncviz_app.project import ResourceStore
+
+
+@dataclass
+class AppContext:
+    bus: ActionBus
+    timeline: Timeline
+    resources: ResourceStore
+    navigator: SegmentNavigator | None = None
+    cache: DiskCache | None = None                       # where expensive derived results are kept
+    # Extent of each view's data in shared time, by view title. All sources are equal:
+    # the timeline spans the union of these, and no source defines time zero.
+    extents: dict[str, tuple[float, float]] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)       # plain factual remarks about the data

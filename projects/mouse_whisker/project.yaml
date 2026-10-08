@@ -1,33 +1,50 @@
 # Mouse whisker object-localization session (DANDI 000231, sub-219CR).
-# Sketch only: the config schema isn't fixed and no loader reads this yet.
-# It records how the framework's generic concepts map onto this experiment.
-# Note this dataset has no neural recording and no stored sync pulses; see
-# docs/design.md section 18.1 for what it does contain.
+# Run with:  syncviz projects/mouse_whisker/project.yaml
+#
+# The schema is still evolving. This file records how the framework's generic
+# concepts map onto this experiment. The dataset has no neural recording and no
+# stored sync pulses; see docs/design.md section 18.1 for what it does contain.
+
+root: ../..                      # relative paths below are resolved from the repository root
+cache: data/derived/cache        # expensive derived results (frame index, brightness scans)
 
 sources:
   session:
-    type: nwb            # resolved via the syncviz.sources entry point
+    type: nwb                    # resolved via the syncviz.sources entry point
     path: data/dandi/000231/sub-219CR/sub-219CR_ses-20190404T152625_behavior+image.nwb
   video:
     type: video
     path: data/dandi/000231/sub-219CR/sub-219CR_ses-20190404T152625_behavior+image/5825b483-75f5-41d3-b8c4-922b275250ff_external_file_0.mkv
-    fps: 200             # the container reports 30; use the dataset's rate
+    fps: 200                     # the container reports 30; use the dataset's rate
     sync_signal:
-      kind: dark_frames  # blackout at the start of each trial
+      kind: dark_frames          # blackout at each trial boundary
 
-# The core only knows "segments" (intervals you can step through). The label
-# is display text; "Trial" is this experiment's name for them.
+# The core only knows "segments" (intervals you can step through). The label is
+# display text; "Trial" is this experiment's name for them.
 segmentations:
   trials:
     label: Trial
     from: session:intervals/trials
-    number_attribute: trial        # shown as the segment's number
-    filters: [stimulus, outcome, choice, servo_position, ignore_trial]
+    number_attribute: trial      # shown as the segment's number
+    filters: [stimulus, outcome, choice, servo_position]
 
-tracks:
-  - {name: Whisker C0 angle, kind: timeseries, from: "session:processing/behavior/processed_position_whisker_C0", member: angle}
-  - {name: Licks left,       kind: events,     from: "session:processing/behavior/licks", member: left}
-  - {name: Licks right,      kind: events,     from: "session:processing/behavior/licks", member: right}
-  - {name: Rewards left,     kind: events,     from: "session:processing/behavior/rewards", member: left}
-  - {name: Contacts C0,      kind: intervals,  from: "session:processing/behavior/contacts_by_whisker_C0"}
-  # Not listed: "rewards right" is a copy of "licks right" in this dataset.
+# Panels in the views area. Which types exist depends on the installed plugins.
+views:
+  - type: video
+    title: Whisker video
+    source: video
+    area: left
+  - type: timeseries
+    title: Whisker C0 angle
+    series: {from: "session:processing/behavior/processed_position_whisker_C0", member: angle}
+    window: 10
+  - type: tracks
+    title: Behavior events
+    window: 10
+    rows:
+      - {name: Lick left,  kind: events,    from: "session:processing/behavior/licks",   member: left}
+      - {name: Lick right, kind: events,    from: "session:processing/behavior/licks",   member: right}
+      - {name: Reward left, kind: events,   from: "session:processing/behavior/rewards", member: left}
+      - {name: Contact C0, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
+      - {name: Contact C1, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
+    # Not listed: "rewards right" is a copy of "licks right" in this dataset.

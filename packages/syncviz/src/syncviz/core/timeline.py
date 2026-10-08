@@ -36,6 +36,16 @@ class Timeline:
     def _clamp(self, t: float) -> float:
         return min(max(t, self.start), self.stop)
 
+    def set_range(self, start: float, stop: float) -> None:
+        """Change the extent of the timeline, e.g. once all sources' extents are known."""
+        if stop <= start:
+            raise ValueError("timeline must have positive length")
+        self.start, self.stop = start, stop
+        self.time = self._clamp(self.time)
+        if self.selection is not None:
+            self.selection = (self._clamp(self.selection[0]), self._clamp(self.selection[1]))
+        self._changed()
+
     def seek(self, time: float) -> None:
         time = self._clamp(time)
         if time != self.time:

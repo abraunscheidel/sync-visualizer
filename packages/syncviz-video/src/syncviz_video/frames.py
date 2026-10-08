@@ -8,7 +8,7 @@ import numpy as np
 # Pixel formats whose first plane is 8-bit luma, so it can be read without conversion.
 # Anything else (RGB or planar RGB such as gbrp, 10/12/16-bit YUV, palettes, Bayer, ...)
 # has a first plane that is not 8-bit brightness and must go through a conversion.
-_LUMA_FIRST_PLANE = frozenset(
+LUMA_FIRST_PLANE = frozenset(
     {
         "yuv420p", "yuvj420p", "yuva420p",
         "yuv422p", "yuvj422p",
@@ -21,7 +21,7 @@ _LUMA_FIRST_PLANE = frozenset(
 
 
 def has_native_luma(frame: av.VideoFrame) -> bool:
-    return frame.format.name in _LUMA_FIRST_PLANE
+    return frame.format.name in LUMA_FIRST_PLANE
 
 
 def luma(frame: av.VideoFrame) -> np.ndarray:

@@ -141,3 +141,60 @@ def test_native_luma_is_used_for_yuv420p(video):
     with av.open(str(video)) as container:
         frame = next(container.decode(container.streams.video[0]))
     assert frame.format.name == "yuv420p" and has_native_luma(frame)
+
+
+# --- PlaybackReader ----------------------------------------------------------------------
+
+def _count_seeks(reader):
+    calls = []
+    original = reader._reader.iter_frames
+
+    def counting(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+
+    reader._reader.iter_frames = counting
+    return calls
+
+
+def test_playback_reader_returns_the_right_frame_for_any_access_pattern(video):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    index = FrameIndex.build(video)
+    reader = PlaybackReader(video, index)
+    try:
+        for n in [0, 1, 2, 5, 5, 8, 9, 30, 29, 3, 100, 101, 104, 60, 119, 118, 0]:
+            assert_is_frame(reader.frame(n), n)
+    finally:
+        reader.close()
+
+
+def test_short_forward_jumps_continue_instead_of_reseeking(video):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    index = FrameIndex.build(video)
+    reader = PlaybackReader(video, index)
+    try:
+        reader.frame(10)                      # first access seeks
+        seeks = _count_seeks(reader)
+        for n in [11, 14, 17, 20, 23]:        # playback-like: a few frames ahead each time
+            assert_is_frame(reader.frame(n), n)
+        assert seeks == []
+        reader.frame(5)                       # backward must seek
+        assert len(seeks) == 1
+    finally:
+        reader.close()
+
+
+def test_playback_reader_survives_running_off_the_end(video):
+    from syncviz_video.frame_reader import PlaybackReader
+
+    index = FrameIndex.build(video)
+    reader = PlaybackReader(video, index)
+    try:
+        assert_is_frame(reader.frame(N_FRAMES - 1), N_FRAMES - 1)
+        assert_is_frame(reader.frame(3), 3)
+        with pytest.raises(IndexError):
+            reader.frame(N_FRAMES)
+    finally:
+        reader.close()

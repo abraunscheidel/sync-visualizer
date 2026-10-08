@@ -5,8 +5,17 @@ description = "Video source and video sync-signal detectors for syncviz."
 requires-python = ">=3.11"
 dependencies = ["syncviz", "av>=12"]
 
+# The video view needs the Qt shell. Without this extra the package is headless
+# (decoding, indexing, blackout detection) and nothing imports Qt.
+[project.optional-dependencies]
+qt = ["syncviz-app"]
+
 [project.entry-points."syncviz.sources"]
 video = "syncviz_video:VideoSource"
+
+# Named by module path, so Qt is only imported if something actually asks for the view.
+[project.entry-points."syncviz.views"]
+video = "syncviz_video.view:VideoView"
 
 [project.entry-points."syncviz.sync_detectors"]
 dark_frames = "syncviz_video:DarkFrameDetector"
