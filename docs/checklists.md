@@ -32,6 +32,13 @@ Things that are easy to forget when changing the app. Where possible a test enfo
   workspace (§28.4). State that is how the window looks goes in the workspace (§28.3).
 - [ ] A view must survive its data being absent in a collection: raise `MissingDataError` and the panel shows "No data".
 
+## Adding a processor
+
+- [ ] Say in its documentation which direction in time it can leak information, and default to the choice that cannot
+  suggest an effect before its cause (see the population rate, section 20.1).
+- [ ] Implement `candidates(catalog)` so it appears in **Add view**; keep its parameters in the series spec.
+- [ ] Test what it conserves (for example the total number of events) and that it cannot create what is not in the data.
+
 ## Adding a source type
 
 - [ ] Entry point in group `syncviz.sources`; implement `describe()` and `catalog()` (so its data can be added from the UI).

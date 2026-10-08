@@ -14,7 +14,9 @@ from typing import Any
 
 import yaml
 
-from syncviz import plugins
+import json
+
+from syncviz import plugins, processors
 from syncviz.resources import EventSeries, IntervalSeries, TimeSeries
 from syncviz.catalog import Collection, discover, fill, has_unfilled
 from syncviz.sources import MissingDataError, Source
@@ -72,6 +74,33 @@ class ResourceStore:
                 raise ValueError(f"{ref!r} has several members {sorted(members)}; name one with 'member'")
             return next(iter(members.values()))
         return members[member]
+
+    def events_of(self, ref: str) -> dict[str, EventSeries]:
+        """Every member of an event container, such as all the units of a recording."""
+        name, path = split_ref(ref)
+        source = self.source(name)
+        return self._get(("ev", ref), lambda: source.read_events(path))
+
+    def derived(self, spec: dict) -> TimeSeries:
+        """A series computed by a processor from other resources, as the spec says:
+
+            {process: population_rate, inputs: ["session:units", {from: "session:licks", member: left}], bin_ms: 10}
+
+        An input written as text is every member of that event container; one written as `{from, member}` is one
+        member. Other keys are the processor's parameters. The result is kept, so views share it."""
+        key = ("derived", json.dumps(spec, sort_keys=True, default=str))
+
+        def build():
+            inputs: list[EventSeries] = []
+            for item in spec.get("inputs", []):
+                if isinstance(item, str):
+                    inputs += list(self.events_of(item).values())
+                else:
+                    inputs.append(self.events(item["from"], item.get("member")))
+            params = {k: v for k, v in spec.items() if k not in ("process", "inputs")}
+            return processors.get(spec["process"])().run(inputs, **params)
+
+        return self._get(key, build)
 
     def intervals(self, ref: str) -> IntervalSeries:
         name, path = split_ref(ref)

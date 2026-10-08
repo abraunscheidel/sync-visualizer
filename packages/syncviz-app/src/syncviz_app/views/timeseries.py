@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 
+from syncviz import processors
 from syncviz_app.views.base import Candidate
 from syncviz_app.views.timewindow import TimeWindowView, break_at_gaps
 
@@ -26,12 +27,18 @@ class TimeSeriesView(TimeWindowView):
                         spec = {"type": cls.type_name, "title": member,
                                 "series": {"from": f"{source}:{entry.path}", "member": member}}
                         out.append(Candidate(f"{member}   ({source}: {entry.path})", spec))
+        for processor in processors.all_processors():                   # series computed from the data
+            for label, title, series in processor.candidates(catalog):
+                out.append(Candidate(label, {"type": cls.type_name, "title": title, "series": series}))
         return out
 
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         series_spec = spec["series"]
-        self.series = context.resources.timeseries(series_spec["from"], series_spec.get("member"))
+        if "process" in series_spec:                      # computed by a processor, not read from a source
+            self.series = context.resources.derived(series_spec)
+        else:
+            self.series = context.resources.timeseries(series_spec["from"], series_spec.get("member"))
         self.curve = self.plot.plot(pen=pg.mkPen("#4fa3e0", width=1.5), connect="finite")
         if self.series.unit:
             self.plot.setLabel("left", self.series.unit)

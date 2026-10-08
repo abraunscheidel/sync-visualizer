@@ -2092,3 +2092,33 @@ machinery instead of this.
   defaults" returns each view to its `lag_ms`.
 * **Caution:** aligning by eye can look convincing and still be wrong. A measured latency (for example the event-aligned
   firing rate) is the number to trust; the delay only helps to see it.
+
+### 20.1 Processors and the population rate
+
+A **processor** turns resources into a new resource: here event series in, a regularly sampled time series out
+(`syncviz/processors.py`; more can be plugins in `syncviz.processors`). Nothing is written to the data file. A view's
+specification says what to compute and from what, so the result is reproducible and is computed when the view is made:
+
+    series:
+      process: population_rate
+      inputs: ["session:units"]        # text = every member of that event container; {from, member} = one member
+      bin_ms: 10
+      smooth_ms: 20
+      smoothing: trailing
+
+The same derived series is computed once and shared (`ResourceStore.derived`). A processor lists what it could offer from
+the data a project has (`candidates(catalog)`), so the Add view dialog shows "Combined event rate of units" without
+knowing the processor by name.
+
+**Population rate** is how often events happen across a group of event series, over time: for spike units, the average
+firing rate of a unit at each moment, in events per second per member. The total number of events is preserved.
+
+**Smoothing must not suggest an effect before its cause.** A symmetric (centred) window spreads every spike into the past,
+so a response appears to begin before the stimulus. On the real recording (mouse 229CR, 442 whisker contacts) the rate
+was flat at about 6.5 Hz per unit until contact and jumped to about 15 Hz at +15 ms when unsmoothed, but a 50 ms centred
+window started rising at -50 ms and flattened the peak to 9 Hz. The default is therefore **trailing** smoothing: a
+moment's rate uses only earlier events, weighted by an exponential (time constant `smooth_ms`, default 20 ms), so the rate
+can never rise before its cause. The price is a lag of about `smooth_ms` (the peak moves from +15 ms to about +30 ms),
+which the view's display delay can offset. `smoothing: centered` remains available for a smoother, time-unbiased
+picture; use it knowing it blurs latencies of a few tens of milliseconds.
+
