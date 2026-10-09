@@ -390,6 +390,7 @@ class MainWindow(QMainWindow):
             return True
         if not 0 <= index < len(project.collections) or self.loading.showing:
             return False
+        self.context.bus.publish(SetPlaying(False))             # nothing to play while the new one loads
         self.loading.begin(f"Opening {project.collections[index].title}", "Reading the files…")
         try:
             return self._switch_collection(index)
@@ -672,6 +673,8 @@ class MainWindow(QMainWindow):
         self.context.timeline.advance(dt)
 
     def _pump(self) -> None:
+        if self.loading.showing:                    # the views are about to be replaced: nothing to redraw or wait for
+            return
         now = time.perf_counter()
         self.scheduler.pump(now, self.context.timeline.time)
         self.stall_guard.check(now)

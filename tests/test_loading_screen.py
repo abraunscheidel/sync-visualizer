@@ -81,3 +81,23 @@ def test_the_screen_covers_the_whole_window_and_follows_its_size(window):
         assert window.loading.geometry() == window.rect()
     finally:
         window.loading.end()
+
+
+def test_playback_stops_as_soon_as_a_session_starts_loading_and_nothing_redraws_meanwhile(window, monkeypatch):
+    from syncviz.core import SetPlaying
+    window.context.bus.publish(SetPlaying(True))
+    assert window.context.timeline.playing
+    seen = {}
+    original = window.project.open_collection
+
+    def slow_open(index):
+        seen["playing"] = window.context.timeline.playing        # while the files are being read
+        calls = []
+        monkeypatch.setattr(window.scheduler, "pump", lambda *a, **k: calls.append(1))
+        window._pump()                                           # the redraw timer firing mid-load
+        seen["redraws"] = len(calls)
+        return original(index)
+
+    monkeypatch.setattr(window.project, "open_collection", slow_open)
+    assert window.switch_collection(_index(window, "sub-B_ses-1"))
+    assert seen == {"playing": False, "redraws": 0}

@@ -607,3 +607,30 @@ def test_group_choices_are_saved_with_the_workspace_and_reset_with_it(grouped_wi
     assert _video(window).lines.hidden == set() and _video(window).widget.layers_visible
     window.switch_workspace("Hidden")
     assert _video(window).lines.hidden == {"Whisker A", "Whisker B"} and not _video(window).widget.layers_visible
+
+
+def test_nothing_is_drawn_on_a_blank_frame_and_the_overlays_come_back_with_the_picture(window, qapp):
+    video = _video(window)
+    video.resize(480, 360)
+    video.show()
+    painted = []
+
+    class Spy:
+        def set_time(self, _t):
+            pass
+
+        def paint(self, _p, _target, _size):
+            painted.append(1)
+
+    video.widget.layers.append(Spy())
+    video._wanted = 30
+    video._on_frame(30, np.zeros((48, 64), dtype=np.uint8))          # a blackout: there is no picture to annotate
+    video.widget.grab()
+    assert video.widget.blank and not painted
+    video._wanted = 31
+    video._on_frame(31, np.full((48, 64), 100, dtype=np.uint8))
+    video.widget.grab()
+    assert not video.widget.blank and painted
+    video._wanted = 32
+    video._on_frame(32, np.full((48, 64), 40, dtype=np.uint8))       # a dim picture is still a picture
+    assert not video.widget.blank

@@ -27,6 +27,8 @@ FADE_STEP = 0.18
 # Video range (black ~16, white ~235) stretched to full range for display.
 _VIDEO_RANGE_LUT = np.clip((np.arange(256) - 16) * 255.0 / 219.0, 0, 255).astype(np.uint8)
 
+BLANK_MEAN_LUMA = 8.0      # of 255: a frame this dark on average is a blackout, not a picture; annotations are not drawn on it
+
 
 class _Decoder(QObject):
     """Decodes on its own thread, always working on the most recently requested frame."""
@@ -91,13 +93,15 @@ class _FrameWidget(QWidget):
         self._cue = ""
         self.layers: list = []                # drawn over the picture (see overlays.py)
         self.layers_visible = True            # one switch for all of them
+        self.blank = False                    # the frame on screen is (nearly) black: there is no picture to annotate
         self._placeholder_mix = 0.0           # 0 = frame fully shown, 1 = placeholder fully shown
         self._target_mix = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._step)
 
-    def show_frame(self, image: QImage) -> None:
+    def show_frame(self, image: QImage, blank: bool = False) -> None:
         self._image, self._cue, self._target_mix = image, "", 0.0
+        self.blank = blank
         self._start_fade()
 
     def show_no_data(self, message: str) -> None:
@@ -136,7 +140,7 @@ class _FrameWidget(QWidget):
             target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
             p.setOpacity(1.0 - self._placeholder_mix)
             p.drawImage(target, self._image)
-            for layer in self.layers if self.layers_visible else []:
+            for layer in self.layers if self.layers_visible and not self.blank else []:
                 layer.paint(p, target, (iw, ih))
             p.setOpacity(1.0)
         if self._placeholder_mix > 0.0 or self._image is None:
@@ -383,7 +387,8 @@ class VideoView(View):
             image = _VIDEO_RANGE_LUT[image]
         image = np.ascontiguousarray(image)
         h, w = image.shape
-        self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
+        blank = float(image.mean()) < BLANK_MEAN_LUMA         # a blackout frame has nothing to draw tracking on
+        self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy(), blank)
         self._shown = n
         self._update_layers()
 
