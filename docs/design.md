@@ -2448,3 +2448,29 @@ event in an indicator-lights view offers two commands: only segments with this e
 event (asks for the size, with a project default, and adds a derived segmentation saved in the workspace). The indicator view
 gains group headings and a search box so a long list stays usable. The usability of the chips should be tested with real use
 before it is settled.
+
+### 28.11 Decisions: multi-selection, the event tracker, clip windows
+
+Decided in discussion (not built yet unless noted).
+
+* **Selection becomes a set.** Click selects one item; Ctrl-click toggles and Shift-click selects a range. No drag-rectangle for now.
+  Commands receive the list of selected items, so "any of these", "all of these" and "none of these" are single commands (any/none: one
+  condition holding all the events; all: one condition per event). The same selection will build groups ("Save as group…").
+* **The event tracker is a view.** Its tiles light at the playhead and each can be delayed like any view. It lists the events the user
+  tracks (empty by default, or the project's `track:` list), grouped by the project's scopes, and below them a collapsible
+  "Other events" section with every event the project names as a grayed tile that does not light. An event is moved between the two with
+  the commands Track this event and Remove from tracker. Grayed tiles can be selected and filtered by, so a filter never needs an event
+  to be tracked, and the event dialog is no longer a way to create a condition. A tile shows the state of any condition it is part of.
+  The video's corner badges are removed once the tracker exists.
+* **Clicking a tile** selects it. A double-click is bound to a list of commands, the first that applies runs (`[seek, only_with_event]`),
+  so on a tile it adds the filter.
+* **Details with several items** show a table with one row per selected item and its brief figures, and the full details of the row the
+  user clicks in the panel. There is no primary item and no tabs (tabs do not scale to dozens of units).
+* **Editing a condition.** The chips remain as the list of active conditions (they show a group such as "C0 or C1" and its window, which
+  tile outlines cannot). Clicking a chip selects its events; if the user then changes the selection the chip shows "Update | Revert".
+  Nothing changes until Update, and there is no hidden editing mode: the selection is the ordinary one.
+* **Clip windows.** Each event has a "before" and an "after" time (ms), with a project default and per-event values in the project, and
+  user overrides saved in the workspace. For an interval event the anchor says what the window is cut around: the **whole interval**
+  (before the start to after the end), which is the default because the end of a touch matters as much as the start, or just the
+  **start** or the **end** (needed when windows must share one alignment point, as when averaging responses to contact onset). With
+  several tiles each event uses its own window and overlapping windows merge, so nothing requested is left out.
