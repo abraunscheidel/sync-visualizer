@@ -72,8 +72,8 @@ class CommandRegistry:
         anything in it)."""
         out = []
         for action in self.all():
-            if not action.in_menu or not action.applies(target):
-                continue
+            if not action.in_menu or not action.applies(target) or (action.run is None and action.children is None):
+                continue          # (a command only for several selected items has no `run`)
             if action.children is not None and not action.children(target, origin):
                 continue
             out.append(action)

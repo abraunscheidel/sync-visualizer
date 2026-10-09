@@ -28,6 +28,12 @@ class Inspector:
             return WHOLE
         return Scope(f"this {nav.label.lower()}", start, stop)
 
+    def _group_text(self, target: Target) -> str:
+        try:
+            return self.context.groups.get(target.path).description
+        except KeyError:
+            return ""
+
     def _described(self, target: Target) -> str:
         if target.source not in self._catalogs:
             try:
@@ -44,10 +50,13 @@ class Inspector:
     def details(self, target: Target) -> Details:
         scope = self.scope()
         title = target.label or target.member or target.path
-        details = Details(title, self.context.explain(title, self._described(target)), scope=scope)
+        described = self._group_text(target) if target.kind == "group" else self._described(target)
+        details = Details(title, self.context.explain(title, described), scope=scope)
         try:
             resources = self.context.resources
-            if target.kind == "events":
+            if target.kind == "group":
+                details.fields = self._group_fields(target, scope)
+            elif target.kind == "events":
                 details.fields = event_fields(resources.events(target.ref, target.member), scope, self.context.dates)
             elif target.kind == "intervals":
                 details.fields = interval_fields(resources.intervals(target.ref), scope)
@@ -60,7 +69,21 @@ class Inspector:
             details.fields.insert(0, Field("At", f"{target.time:.4f} s", brief=True))
         return details
 
+    def _group_fields(self, target: Target, scope) -> list[Field]:
+        """A group: how many items it has here, how it is defined, and the figures of its events together."""
+        groups, name = self.context.groups, target.path
+        members = groups.members(self.context.resources, name)
+        fields = [Field("Members here", str(len(members)), "Group", brief=True, key="members"),
+                  Field("Defined by", groups.describe(name), "Group", key="rule"),
+                  Field("Kept in", "your saved groups" if groups.is_saved(name) else "the project file", "Group", key="kept")]
+        if members:
+            merged = groups.merged(self.context.resources, name)
+            fields += [f for f in event_fields(merged, scope, self.context.dates) if f.group == "Statistics"]
+        return fields
+
     def _from_source(self, target: Target) -> list[Field]:
+        if target.kind == "group":
+            return []
         try:
             return list(self.context.resources.source(target.source).details(target))
         except MissingDataError:

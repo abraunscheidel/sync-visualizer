@@ -13,8 +13,10 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtCore import QByteArray, QElapsedTimer, QTimer, Qt
 from syncviz import plugins
 from syncviz.conditions import Condition
+from syncviz.groups import Group
 from syncviz_app.details_panel import DetailsPanel
 from syncviz_app.events_panel import EventsPanel
+from syncviz_app.groups_panel import GroupsPanel
 from syncviz_app.commands import Command
 from syncviz_app.segmentation import segments
 from syncviz_app.loading import LoadingScreen, run_in_background
@@ -122,6 +124,14 @@ class MainWindow(QMainWindow):
         self.events_dock = events_dock
         if self.filter_bar is not None:
             context.events.subscribe(self.filter_bar.refresh)         # the counts in the filters follow the conditions
+        self.groups_panel = GroupsPanel(context)
+        groups_dock = QDockWidget("Groups", self)
+        groups_dock.setWidget(self.groups_panel)
+        groups_dock.setObjectName("groups")
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, groups_dock)
+        self.tabifyDockWidget(events_dock, groups_dock)
+        details_dock.raise_()
+        self.groups_dock = groups_dock
         self._register_commands()
 
         # Views live in their own dock host so the timeline strip can sit beneath all of them.
@@ -295,6 +305,37 @@ class MainWindow(QMainWindow):
         registry.register(Command("clip_many", "Clip around these events", run_many=keep_many("clip", True, False),
                                   applies_many=every_event,
                                   description="Move between just the moments around any of them, each with its own clip window"))
+        def select_members(target, _origin) -> None:
+            targets = self.context.groups.member_targets(self.context.resources, target.path)
+            if targets:
+                self.context.selection.set_all(targets)
+            else:
+                self.statusBar().showMessage(f"{target.label} has no items in this recording", 6000)
+
+        def one_container(targets) -> bool:
+            first = targets[0]
+            return bool(first.source) and all(t.kind == "events" and t.member is not None
+                                              and (t.source, t.path) == (first.source, first.path) for t in targets)
+
+        def save_group(targets, _origin) -> None:
+            from PySide6.QtWidgets import QInputDialog
+
+            name, ok = QInputDialog.getText(self, "Save as group", f"Name for these {len(targets)} items:")
+            if not ok or not name.strip():
+                return
+            try:
+                self.context.groups.add(Group(name.strip(), f"{targets[0].source}:{targets[0].path}",
+                                              members=tuple(t.member for t in targets)))
+            except ValueError as exc:
+                self.statusBar().showMessage(str(exc), 8000)
+                return
+            self.groups_dock.show()
+            self.groups_dock.raise_()
+
+        registry.register(Command("select_members", "Select its items", select_members, applies=lambda t: t.kind == "group",
+                                  description="Select every item of the group, to see them together or to act on them"))
+        registry.register(Command("save_group", "Save as group…", run_many=save_group, applies_many=one_container,
+                                  description="Keep these items as a named group, to select, filter by and aggregate together"))
         registry.register(Command("clip_around", "Clip around this event", clip_around,
                                   applies=lambda t: self.context.events.name_of(t) is not None,
                                   description="Move between just the moments around every occurrence of this event, using its "
@@ -481,6 +522,7 @@ class MainWindow(QMainWindow):
             def open_files():
                 opened = project.open_collection(index)
                 try:
+                    opened.group_store = context.groups
                     context.events.warm_in(opened)                     # the named events too: here, not at the first click
                     found = None
                     if context.navigator is not None:

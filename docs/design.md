@@ -2601,3 +2601,27 @@ per recording (`ResourceStore.catalog`), and the project's named events, with th
 (`EventConditions.warm_in`): in the window build at startup, and in the loading step when switching sessions, off the interface thread. Grayed
 tiles are never read just to be drawn. Opening the list takes about 10 ms. A new kind of data that is slow to find out about should be warmed
 the same way, not at the first click.
+
+### 28.16 Groups (built)
+
+A group is a named set of items from one container of event series (the units of a recording), chosen by a **rule** or listed by hand.
+`syncviz/groups.py` (pure) has `Group`, the rule test, `members_of` and `merge_events`; `syncviz_app/group_store.py` keeps them.
+
+* **Rule or list.** A rule asks each item's own attributes (`where: {layer: "4"}`, a list of values, `{min: 700}` or `{min, max}`; all rules must
+  hold), so it picks the right items in every session, whichever units that session has. A list of ids belongs to the recording the ids came
+  from; ids a recording lacks are simply not there. A saved item filter and a group are the same thing. Items come out in the container's order.
+* **Where they live.** The project file's `groups:` section (shared, read-only, with an optional `description`), and the viewer's own, kept in
+  a file of their own beside the project (`groups/<project name>.json`) and written when a group is made or removed, since making one is the
+  act of saving it. They are the project's vocabulary, not window layout, so they are not in a workspace. Names are unique across groups and
+  events. A broken saved-groups file is ignored with a note; a saved group with a project group's name loses to it.
+* **A group is an event.** It happens when any member fires (`merge_events`: every spike of every member). It is listed under "Groups" next to
+  the project's scopes, so the Events panel, chips, clips, the tracker (a tile lights when any member fires) and the Add condition dialog use it
+  like any event. Removing a group drops the conditions and tracked tiles that used it.
+* **Making one.** Select several items of one container and choose **Save as group…**; or **New group…** in the Groups panel (a dock beside
+  Events), a dialog with a name, a container, and rules whose values are offered from the items' attributes (a measurement defaults to a range)
+  and a live count of the items that match in the open recording.
+* **Using one.** **Select its items** selects every member, wherever the views show them (and the Groups panel's double-click does the same);
+  **Open as view** on a group offers its average rate (the population rate over its members); the Details panel shows its members here, how it is
+  defined, where it is kept and the figures of its events together.
+* **Not yet.** Saying in a workspace which groups are shown; offering a rule when a selection shares one; editing or renaming a group; the
+  average over a group inside aggregation views (that is the next item, with the time-aligned profiles).

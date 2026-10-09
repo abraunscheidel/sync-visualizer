@@ -98,6 +98,15 @@ events:
 interaction:
   snap: nearest
 
+# Named sets of units, picked by a rule so they work in every session (whichever units it happens to have). The viewer can make more
+# (select units, Save as group, or New group in the Groups panel) and they are kept beside this file. A group is an event too: it
+# happens when any of its units fires, so conditions, clips and the tracker can use it, and its average rate can be plotted.
+groups:
+  Layer 2/3: {of: "session:units", where: {layer: "2/3"}, description: "Units recorded in layer 2/3."}
+  Layer 4: {of: "session:units", where: {layer: "4"}, description: "Units recorded in layer 4, the main input layer from the thalamus."}
+  Layer 5b: {of: "session:units", where: {layer: "5b"}, description: "Units recorded in layer 5b."}
+  Inhibitory: {of: "session:units", where: {inhibitory: true}, description: "Units classified as inhibitory."}
+
 # What one step of the playhead (Shift+Left / Shift+Right) means. Optional: without this the
 # toolbar starts on the first view that has a time grid, and the user can change it there.
 # Either name a view:  step: {view: Whisker video}   or a fixed interval:  step: {interval_ms: 25}

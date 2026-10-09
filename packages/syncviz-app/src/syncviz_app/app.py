@@ -7,7 +7,9 @@ from pathlib import Path
 from syncviz.cache import DiskCache
 from syncviz.core import ActionBus, FixedStep, SegmentNavigator, Stepper, Timeline
 from syncviz.core.stepping import FIXED_INTERVAL, Shifted
+from syncviz.groups import Group
 from syncviz_app.event_conditions import EventConditions
+from syncviz_app.group_store import GroupStore, groups_path
 from syncviz_app.inspector import Inspector
 from syncviz_app.segmentation import segments
 from syncviz_app.keys import DEFAULT_KEYS
@@ -44,7 +46,18 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
 
     context.dates = project.dates
     context.inspector = Inspector(context)
-    context.events = EventConditions(context, project.event_groups, project.clip_defaults, project.track_default)
+    project_groups = []
+    for group_name, group_spec in (project.config.get("groups") or {}).items():
+        try:
+            project_groups.append(Group.from_dict(str(group_name), group_spec))
+        except (KeyError, TypeError, ValueError) as exc:
+            context.notes.append(f"group {group_name!r} in the project file ignored: {exc}")
+    event_names = [n for events in project.event_groups.values() for n in events]
+    context.groups = GroupStore(project_groups, groups_path(project_path, project.name) if directory else None, lambda: event_names)
+    context.notes.extend(context.groups.notes)
+    project.resources.group_store = context.groups
+    context.events = EventConditions(context, project.event_groups, project.clip_defaults, project.track_default, context.groups)
+    context.groups.subscribe(context.events.groups_changed)
     context.events.warm()                                  # the named events are loaded now, not at the first click
     context.commands = CommandRegistry(context, project.config.get("interaction"), DEFAULT_KEYS)
 

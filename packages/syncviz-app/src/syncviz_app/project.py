@@ -42,6 +42,7 @@ class ResourceStore:
     def __init__(self, sources: dict[str, Source]) -> None:
         self.sources = sources
         self._cache: dict[tuple, Any] = {}
+        self.group_store = None                  # set by the application: lets a processor take `{group: name}` as input
 
     def close(self) -> None:
         for source in self.sources.values():
@@ -119,6 +120,8 @@ class ResourceStore:
             for item in spec.get("inputs", []):
                 if isinstance(item, str):
                     inputs += list(self.events_of(item).values())
+                elif "group" in item:
+                    inputs += self.group_store.series(self, item["group"])
                 else:
                     inputs.append(self.events(item["from"], item.get("member")))
             params = {k: v for k, v in spec.items() if k not in ("process", "inputs")}

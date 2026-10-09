@@ -18,14 +18,16 @@ from syncviz.conditions import Condition, condition_mask, conditions_mask
 from syncviz.epochs import ANCHORS, EpochSource, epochs_from_sources
 from syncviz.resources import EventSeries
 from syncviz.inspection import Target
+from syncviz_app.group_store import SCOPE as GROUPS_SCOPE
 from syncviz_app.project import split_ref
 
 
 class EventConditions:
     def __init__(self, context, groups: dict[str, dict[str, dict]] | None = None, defaults: dict | None = None,
-                 track: list[str] | None = None) -> None:
+                 track: list[str] | None = None, group_store=None) -> None:
         self.context = context
-        self.groups = groups or {}                          # scope -> event name -> {from, member?}
+        self.group_store = group_store                      # the saved and project groups, which are events too (28.16)
+        self.project_events = groups or {}                  # scope -> event name -> {from, member?}
         self.defaults = dict(defaults or {})                # the project's `clip:` (before_ms, after_ms, anchor)
         self.clip_overrides: dict[str, dict] = {}           # per event, set by the user
         self.track_default = [n for n in (track or []) if n in self.names()]   # the project's own list of events to track
@@ -39,6 +41,28 @@ class EventConditions:
         self._reason = ""
 
     # -- the events on offer ---------------------------------------------------------------
+    @property
+    def groups(self) -> dict[str, dict[str, dict]]:
+        """Scope -> event name -> where its data is: the project's own events, and under "Groups" each group (`{group: name}`)."""
+        out = dict(self.project_events)
+        if self.group_store is not None and self.group_store.names():
+            out[GROUPS_SCOPE] = {name: {"group": name} for name in self.group_store.names()}
+        return out
+
+    @groups.setter
+    def groups(self, value) -> None:
+        self.project_events = value
+
+    def groups_changed(self) -> None:
+        """A group was made or removed: anything that named one that is gone is dropped, and the lists redraw."""
+        names = set(self.names())
+        self.tracked = [n for n in self.tracked if n in names]
+        kept = [c for c in self.items if all(e in names for e in c.events)]
+        if len(kept) != len(self.items):
+            self.items = kept
+            self.apply()
+        self._notify()
+
     def spec_of(self, name: str) -> dict:
         for events in self.groups.values():
             if name in events:
@@ -51,6 +75,8 @@ class EventConditions:
     def find_in(self, resources, name: str):
         """The data behind an event name in the recording `resources` holds."""
         spec = self.spec_of(name)
+        if "group" in spec:
+            return self.group_store.merged(resources, spec["group"])
         return resources.events_or_intervals(spec["from"], spec.get("member"))
 
     def warm_in(self, resources) -> None:
@@ -61,7 +87,8 @@ class EventConditions:
         for name in self.names():
             try:
                 self.find_in(resources, name)
-                resources.kind_of(self.spec_of(name)["from"])
+                if "from" in self.spec_of(name):
+                    resources.kind_of(self.spec_of(name)["from"])
             except Exception:
                 pass
 
@@ -75,6 +102,8 @@ class EventConditions:
     def target_of(self, name: str) -> Target:
         """The target an event name stands for (what a tile points at), whatever the open recording holds."""
         spec = self.spec_of(name)
+        if "group" in spec:
+            return Target("", name, "group", None, name)    # a group is not at one place in a file
         source, path = split_ref(spec["from"])
         try:
             kind = self.context.resources.kind_of(spec["from"]) or "events"
@@ -136,8 +165,12 @@ class EventConditions:
 
     def name_of(self, target: Target) -> str | None:
         """The project's name for the event `target` points at, if it names it."""
+        if target.kind == "group":
+            return target.path if target.path in self.names() else None
         for events in self.groups.values():
             for name, spec in events.items():
+                if "from" not in spec:
+                    continue
                 try:
                     source, path = split_ref(spec["from"])
                 except ValueError:

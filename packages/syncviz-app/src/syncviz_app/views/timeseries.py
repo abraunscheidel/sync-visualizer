@@ -39,6 +39,10 @@ class TimeSeriesView(TimeWindowView):
 
     @classmethod
     def spec_for(cls, target):
+        if target.kind == "group":                 # the average rate of the group's items
+            return {"type": cls.type_name, "title": f"{target.label} rate",
+                    "series": {"process": "population_rate", "inputs": [{"group": target.path}],
+                               "bin_ms": 10, "smooth_ms": 20, "smoothing": "trailing"}}
         if target.kind != "timeseries":
             return None
         name = target.label or target.member or target.path.rsplit("/", 1)[-1]
