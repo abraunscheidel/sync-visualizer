@@ -96,8 +96,8 @@ class CommandRegistry:
         def seek(target: Target, origin) -> None:
             moment = target.time if target.time is not None else target.at
             lag = getattr(origin, "lag", 0.0)                    # the view shows `lag` behind the playhead
-            if moment is not None and context.timeline.allows(moment + lag):
-                context.bus.publish(Seek(moment + lag))
+            if moment is not None:
+                context.bus.publish(Seek(context.timeline.snap(moment + lag)))
 
         def copy_details(target: Target, _origin) -> None:
             QGuiApplication.clipboard().setText(context.inspector.full_text(target))

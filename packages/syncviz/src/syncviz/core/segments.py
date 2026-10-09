@@ -48,6 +48,7 @@ class SegmentNavigator:
         self._skip_hidden = True
         self._criteria: dict = {}                   # the attribute filter in force
         self._mask: np.ndarray | None = None        # segments that also satisfy the event conditions (None: no conditions)
+        self.snap_mode = "nearest"                  # where a pointer gesture on a hidden region lands: nearest, before or after
         self.confine = False                       # keep movement inside the segments even when no filter is set (windows)
         self._all = range(len(intervals))
         self._observers: list[Callable[[SegmentNavigator], None]] = []
@@ -155,6 +156,24 @@ class SegmentNavigator:
             return True
         i = int(np.searchsorted(self._visible_starts, time, side="right")) - 1
         return i >= 0 and time < self._visible_stops[i]
+
+    def snap(self, time: float) -> float:
+        """Where a pointer gesture (a click or a drag on the timeline, a click in a plot) at `time` should put the playhead.
+        Anywhere allowed, exactly there. On a region the filter hides, the closest allowed point as `snap_mode` says: `nearest`
+        (the end of the segment before it or the start of the one after, whichever is closer), `before` (the end of the segment
+        before it) or `after` (the start of the one after). If there is nothing on that side, the other side is used."""
+        if self.allows(time):
+            return time
+        i = int(np.searchsorted(self._visible_starts, time, side="right")) - 1      # last match starting at or before time
+        before = float(np.nextafter(self._visible_stops[i], -np.inf)) if i >= 0 else None
+        after = float(self._visible_starts[i + 1]) if i + 1 < len(self._visible) else None
+        if self.snap_mode == "before":
+            return before if before is not None else after
+        if self.snap_mode == "after":
+            return after if after is not None else before
+        if before is None or after is None:
+            return before if after is None else after
+        return before if time - before <= after - time else after
 
     def resolve(self, time: float, previous: float) -> float:
         """The timeline's constraint: while restricting, nothing may move the playhead outside the

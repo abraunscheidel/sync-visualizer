@@ -60,10 +60,15 @@ class Timeline:
         return min(max(t, self.start), self.stop)
 
     def allows(self, time: float) -> bool:
-        """Whether the playhead may be at `time`. Pointer gestures check this and ignore a target
-        that is not allowed, which is how disabled regions behave; relative moves (stepping,
-        playback) instead go through the constraint's `resolve` and jump to the nearest allowed time."""
+        """Whether the playhead may be at `time`."""
         return self.constraint is None or self.constraint.allows(time)
+
+    def snap(self, time: float) -> float:
+        """Where a pointer gesture aimed at `time` should put the playhead: there if it is allowed, else the closest allowed
+        point (see the constraint's `snap`). A region the filter hides is never a dead end for a click or a drag."""
+        time = self._clamp(time)
+        snap = getattr(self.constraint, "snap", None)
+        return time if snap is None else self._clamp(snap(time))
 
     def _allowed(self, time: float) -> float:
         time = self._clamp(time)

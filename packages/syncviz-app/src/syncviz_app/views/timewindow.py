@@ -111,11 +111,10 @@ class TimeWindowView(View):
         return float(viewbox.mapSceneToView(scene).x()) if viewbox.sceneBoundingRect().contains(scene) else None
 
     def seek_from_time(self, time: float) -> bool:
-        """Move the playhead to a clicked time, unless it is not allowed (see Timeline.allows)."""
-        if not self.context.timeline.allows(time):
-            return False
-        self.context.bus.publish(Seek(time))
-        return True
+        """Move the playhead to a clicked time, or the closest allowed one if the filter hides it (see Timeline.snap)."""
+        snapped = self.context.timeline.snap(time)
+        self.context.bus.publish(Seek(snapped))
+        return snapped == time
 
     def set_window(self, time: float) -> tuple[float, float]:
         self._last_time = time

@@ -2488,3 +2488,9 @@ has a `clip:` default and an event may carry `clip_ms: [before, after]` and `anc
 saved in the workspace (`settings.events.clips` and `.segmentations`). Commands on a named event: **Make windows around this event** (adds
 the windows as a segmentation to choose, and moves to them) and **Clip window…** (a small dialog). Windows from several events at once
 arrive with multi-selection.
+
+**Clicking on a part the filter hides (built).** A click or drag on the timeline strip, a click in a plot, and "Go to this time" no longer
+ignore a hidden region (which left narrow matches hard to hit): the playhead goes to the closest allowed point, as
+`interaction: {snap: nearest|before|after}` says (default nearest; the end of the segment before, or the start of the next; if there is
+nothing on the chosen side, the other side). The cursor over the bar is always the pointing hand. Stepping and playback still use `resolve`,
+which jumps in the direction of travel.

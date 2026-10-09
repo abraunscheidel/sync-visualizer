@@ -114,6 +114,12 @@ events:
     Lick right: {from: "session:processing/behavior/licks", member: right}
     Reward left: {from: "session:processing/behavior/rewards", member: left}
 
+# How the mouse behaves. `snap`: where a click or drag on the timeline (or in a plot) lands when it is on a part the filters hide:
+# nearest (the closest edge of an included segment, the default), before (the end of the one before it) or after (the start of
+# the next one). `click` and `double_click` name the command each runs on what is under the pointer.
+interaction:
+  snap: nearest
+
 # What one step of the playhead (Shift+Left / Shift+Right) means. Optional: without this the
 # toolbar starts on the first view that has a time grid, and the user can change it there.
 # Either name a view:  step: {view: Whisker video}   or a fixed interval:  step: {interval_ms: 25}

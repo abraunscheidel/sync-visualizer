@@ -175,23 +175,17 @@ class TimelineBar(QWidget):
 
     # -- interaction ---------------------------------------------------------------------
     def seek_from_x(self, x: float) -> bool:
-        """Move the playhead to the time at pixel `x`, unless that time is not allowed (a segment the
-        filter hides, while movement is restricted to matches). A disabled region ignores the
-        gesture, so a drag across it leaves the playhead where it was."""
+        """Move the playhead to the time at pixel `x`. On a part the filter hides (while movement is restricted to matches) it
+        goes to the closest allowed point instead (`interaction: {snap: nearest|before|after}`), so a narrow match is
+        easy to reach. Returns whether the playhead was put exactly where clicked."""
         t = self._time_at(x)
-        if not self.context.timeline.allows(t):
-            return False
-        self.context.bus.publish(Seek(t))
-        return True
+        snapped = self.context.timeline.snap(t)
+        self.context.bus.publish(Seek(snapped))
+        return snapped == t
 
     def cursor_at(self, x: float, y: float) -> Qt.CursorShape:
-        """Pointing hand where a click would move the playhead, a "not allowed" symbol over a
-        disabled part of the bar (a segment the filter hides, while movement is restricted)."""
-        t = self._time_at(x)
-        tl = self.context.timeline
-        over_groove = GROOVE_TOP <= y <= GROOVE_TOP + GROOVE_HEIGHT
-        if over_groove and tl.start <= t <= tl.stop and not tl.allows(t):
-            return Qt.CursorShape.ForbiddenCursor
+        """Pointing hand: a click anywhere on the bar moves the playhead (to the closest allowed point if the filter hides
+        the spot)."""
         return Qt.CursorShape.PointingHandCursor
 
     def _seek_to(self, event) -> None:

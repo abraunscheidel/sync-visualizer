@@ -73,6 +73,11 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
         context.navigator.select(context.navigator.index)      # move the playhead to the first segment
         first_spec = next(iter(project.segmentation_specs.values()))
         context.navigator.skip_hidden = bool(first_spec.get("skip_filtered", True))
+        snap = str((project.config.get("interaction") or {}).get("snap", "nearest"))
+        if snap not in ("nearest", "before", "after"):
+            context.notes.append(f"interaction.snap {snap!r} is not nearest, before or after; using nearest")
+            snap = "nearest"
+        context.navigator.snap_mode = snap
         context.navigator.follow(timeline)                     # current segment tracks the playhead from here on
 
     # What one "step" means. Every view with a natural grid of ticks is offered, along with a fixed

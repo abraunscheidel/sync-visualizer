@@ -329,19 +329,48 @@ def _restrict_to_convex(window):
     assert window.context.navigator.restricting
 
 
-def test_clicking_a_hidden_segment_does_nothing_and_a_matching_one_goes_exactly_there(window):
+def test_clicking_a_hidden_segment_goes_to_the_closest_match_and_a_matching_one_goes_exactly_there(window):
     _restrict_to_convex(window)                    # matches: 0-1.5 s and 3-5 s; hidden: 1.5-3 s
     bar, tl = window.timeline_bar, window.context.timeline
     window.context.bus.publish(Seek(0.5))
 
-    assert bar.seek_from_x(bar._x_of(2.0)) is False            # hidden
-    assert tl.time == 0.5
+    assert bar.seek_from_x(bar._x_of(2.0)) is False            # hidden: 0.5 s from the match before, 1 s from the one after
+    assert tl.time == pytest.approx(1.5, abs=1e-6)
+
+    assert bar.seek_from_x(bar._x_of(2.8)) is False            # now the later one is the closer
+    assert tl.time == pytest.approx(3.0)
 
     assert bar.seek_from_x(bar._x_of(4.0)) is True             # matching
     assert tl.time == pytest.approx(4.0)
 
 
-def test_dragging_across_a_hidden_segment_leaves_the_playhead_where_it_was_until_a_match_is_reached(window):
+def test_which_side_a_click_on_a_hidden_segment_lands_on_can_be_chosen(window):
+    _restrict_to_convex(window)
+    bar, tl, nav = window.timeline_bar, window.context.timeline, window.context.navigator
+    nav.snap_mode = "before"
+    bar.seek_from_x(bar._x_of(2.8))
+    assert tl.time == pytest.approx(1.5, abs=1e-6)                         # the end of the match before, though the next is closer
+    nav.snap_mode = "after"
+    bar.seek_from_x(bar._x_of(1.6))
+    assert tl.time == pytest.approx(3.0)
+    nav.snap_mode = "before"
+    bar.seek_from_x(bar._x_of(4.0))                                        # a click inside a match: exactly there
+    assert tl.time == pytest.approx(4.0)
+
+
+def test_with_nothing_on_the_chosen_side_the_other_side_is_used(window):
+    _restrict_to_convex(window)
+    nav = window.context.navigator
+    nav.snap_mode = "before"
+    assert nav.snap(1.0) == 1.0                                              # allowed: untouched
+    nav.filter(stimulus="concave")                                           # matches only 1.5 to 3.0
+    nav.snap_mode = "before"
+    assert nav.snap(0.5) == pytest.approx(1.5)                               # nothing before it: the next one
+    nav.snap_mode = "after"
+    assert nav.snap(4.0) == pytest.approx(3.0, abs=1e-6)                     # nothing after it: the one before
+
+
+def test_dragging_across_a_hidden_segment_follows_the_pointer_to_the_closest_allowed_point(window):
     _restrict_to_convex(window)
     bar, tl = window.timeline_bar, window.context.timeline
     window.context.bus.publish(Seek(0.5))
@@ -351,22 +380,20 @@ def test_dragging_across_a_hidden_segment_leaves_the_playhead_where_it_was_until
         bar.seek_from_x(bar._x_of(t))
         seen.append(round(tl.time, 2))
 
-    assert seen == [0.8, 1.2, 1.2, 1.2, 1.2, 3.4, 4.2]          # stuck at the last allowed point, then follows
+    assert seen == [0.8, 1.2, 1.5, 1.5, 3.0, 3.4, 4.2]          # sticks to the nearer edge of the hidden part, then follows
 
 
-def test_the_cursor_shows_whether_a_click_would_work(window):
+def test_the_cursor_is_always_the_pointing_hand_over_the_bar_because_a_click_always_works(window):
     from PySide6.QtCore import Qt
     from syncviz_app import timeline_bar as tb
     _restrict_to_convex(window)
     bar = window.timeline_bar
     y = tb.GROOVE_TOP + tb.GROOVE_HEIGHT / 2
 
-    assert bar.cursor_at(bar._x_of(2.0), y) == Qt.CursorShape.ForbiddenCursor       # hidden by the filter
-    assert bar.cursor_at(bar._x_of(4.0), y) == Qt.CursorShape.PointingHandCursor    # a match
-    assert bar.cursor_at(bar._x_of(2.0), tb.ROWS_TOP + 2) == Qt.CursorShape.PointingHandCursor  # not over the bar itself
+    assert bar.cursor_at(bar._x_of(2.0), y) == Qt.CursorShape.PointingHandCursor     # hidden by the filter
+    assert bar.cursor_at(bar._x_of(4.0), y) == Qt.CursorShape.PointingHandCursor     # a match
 
     window.filter_bar.skip.setChecked(False)                                         # not restricting any more
-    assert bar.cursor_at(bar._x_of(2.0), y) == Qt.CursorShape.PointingHandCursor
     assert bar.seek_from_x(bar._x_of(2.0)) is True
 
 
@@ -384,7 +411,7 @@ def test_clicking_in_a_plot_follows_the_same_rule(window):
     window.context.bus.publish(Seek(0.5))
 
     assert plot.seek_from_time(2.0) is False
-    assert window.context.timeline.time == 0.5
+    assert window.context.timeline.time == pytest.approx(1.5, abs=1e-6)
     assert plot.seek_from_time(4.0) is True
     assert window.context.timeline.time == 4.0
 
