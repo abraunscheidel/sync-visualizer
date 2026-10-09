@@ -2535,3 +2535,7 @@ Still open, to discuss after the planned work (epochs, groups, aggregation, heal
   would show only ids. This belongs to the profile layer (28.9).
 * **Conditions look only at events.** Conditions on a continuous signal ("angle above 20 degrees for more than 100 ms") need event
   detectors that turn a signal into events; the architecture allows it and nothing builds it yet.
+
+### 28.14 Later: manual segments and marks
+
+Not built; recorded so it is not lost, and not a priority. A user could cut a continuous recording into segments by hand, and mark single moments. Both fit what exists: a segmentation is a list of intervals with attributes, so the navigator, filters, event conditions, clips and statistics would treat hand-made segments like trials, and a hand-made mark is an event, so it would appear as an event tile and work in conditions. What is missing: ways to create them (in and out at the playhead, drag on the timeline strip, split at the playhead), to edit and delete them, a name and optional tags or attributes so they can be filtered on, and storage. They are the user's own data about one recording, so they belong with the per-recording state (a file next to the project, written only when the user saves), not in the workspace. A project would declare a manual segmentation type so it appears with the others. This stays small and is not a general annotation system.
