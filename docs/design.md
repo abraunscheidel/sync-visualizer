@@ -2551,3 +2551,26 @@ its own clip); a set of conditions that together would leave nothing is refused 
 each selected item and its brief figures (names only above 60 items), and the full details of the row the user clicks in it; the choice
 of row is the user's, in the panel, and does not change the selection. A following tracks view shows every selected item it can.
 Not yet: a drag-rectangle, and "Save as group" (with the groups work).
+
+### 28.15 Guiding principle: a new plugin should be easy to write, to try and to test
+
+Someone with a new experiment should be able to get their data in with as little work as possible, see quickly whether it worked, and
+test it. In order of how much work they should need:
+
+1. **No code.** An NWB file whose data is in the standard places (trials as `TimeIntervals`, `BehavioralEvents`, one-dimensional
+   `TimeSeries`, a units table, ndx-pose) needs only a project file. Today that works, but the author must know the paths inside the
+   file; the Add view dialog lists them and nothing else does.
+2. **Configuration, not code, for common custom layouts.** A custom table with a time column (and perhaps a column to split it by) is the
+   usual case. Declared in the project, for example "this table is events, its time is `onset_s`, split by `frequency_hz`", so it needs
+   no Python. Not built; this is the biggest saving.
+3. **A small plugin file for what is truly new.** Today: a subclass of the format reader that overrides `catalog` and the `read_*` it
+   needs (about 20 lines for a custom table), plus a `pyproject.toml` entry point and installing the package. The packaging step is
+   the main friction: a plugin should instead be loadable from a file named in the project (`plugins: [my_experiment.py]`). Not built.
+4. **Quick checks and tests.** Not built: `syncviz inspect file.nwb` to list what is in a file as the app would see it (paths, kinds,
+   members, descriptions); `syncviz check project.yaml` to load everything without a window and report what is wrong (a path that is
+   not in the file, an event no recording has, a glossary note for a name that does not exist); a test kit with a conformance check any
+   source can be run through (the catalog agrees with what the `read_*` return, times are sorted, a missing thing raises
+   `MissingDataError`) and helpers to write a tiny fixture file; and a short guide, with a worked example, in the docs.
+
+The profile layer (28.9) is where items 2 and 3 live, so it is also the plugin-authoring layer; that is a reason to treat it as more than a
+tidy-up.
