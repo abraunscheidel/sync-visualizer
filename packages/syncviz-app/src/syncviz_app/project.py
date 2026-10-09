@@ -229,7 +229,9 @@ class Project:
 
     @property
     def segmentation_specs(self) -> dict[str, dict]:
-        return dict(self.config.get("segmentations", {}))
+        """The project's segmentations. A project that names none has one segment, the whole recording, so events, conditions and
+        clips still have something to work within."""
+        return dict(self.config.get("segmentations") or {"recording": {"label": "Recording", "whole": True}})
 
     # -- sources ---------------------------------------------------------------------------
     def build_sources(self, collection: Collection) -> dict[str, Source]:

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from syncviz.epochs import EpochSource, epochs_from_sources, measure
+from syncviz.epochs import UNBOUNDED, EpochSource, epochs_from_sources, measure
 from syncviz.resources import EventSeries, IntervalSeries
 from syncviz.sources import MissingDataError
 
@@ -38,7 +38,9 @@ def _build(specs, name, resources, notes, building) -> IntervalSeries:
     if name in building:
         raise ValueError(f"segmentations {' -> '.join(building + (name,))} refer to each other in a circle")
     spec = specs[name]
-    if "derive" in spec:
+    if spec.get("whole"):                     # no segmentation: the recording is one segment
+        base = IntervalSeries(np.array([-UNBOUNDED]), np.array([UNBOUNDED]), {}, name=name)
+    elif "derive" in spec:
         base = _derive(specs, name, spec["derive"], resources, notes, building + (name,))
     else:
         base = resources.intervals(spec["from"])

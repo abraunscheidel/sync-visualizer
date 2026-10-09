@@ -213,7 +213,7 @@ def test_a_badge_is_really_drawn_on_the_picture_when_its_event_is_on_screen(wind
 
 def test_the_settings_offer_the_corner_and_a_switch_for_each_event(window):
     settings = _video(window).settings()
-    assert [s.key for s in settings] == ["overlay.enabled", "overlay.corner", "overlay.show.Lick", "overlay.show.Contact"]
+    assert [s.key for s in settings] == ["overlay.enabled", "overlay.corner", "overlay.show.Lick", "overlay.show.Contact", "overlay.hide_blank"]
     assert settings[0].kind == "toggle" and settings[0].value is True            # one switch for all overlays
     corner = settings[1]
     assert corner.kind == "choice" and corner.value == "top-right"
@@ -235,7 +235,7 @@ def test_the_views_list_shows_the_selected_views_settings_and_changing_them_appl
     panel.list.setCurrentRow([v.title for v in window.views].index("Clip"))
     combos = [c for c in panel.findChildren(QComboBox) if c.property("workspace") == "saved"]
     checks = [c for c in panel.findChildren(QCheckBox) if c.property("workspace") == "saved"]
-    assert len(combos) == 1 and [c.text() for c in checks] == ["Show overlays", "Lick", "Contact"]
+    assert len(combos) == 1 and [c.text() for c in checks] == ["Show overlays", "Lick", "Contact", "Hide overlays on blank frames"]
     combos[0].setCurrentIndex(combos[0].findData("off"))
     assert _video(window).badges.corner == "off"
     checks[2].setChecked(False)
@@ -470,7 +470,7 @@ def test_the_marker_takes_the_colour_of_the_line_it_names_and_is_drawn_at_the_co
 def test_each_tracked_thing_can_be_switched_off_and_the_projects_choice_comes_back_on_reset(tracked_window):
     video = next(v for v in tracked_window.views if v.title == "Clip")
     keys = [s.key for s in video.settings()]
-    assert keys == ["overlay.enabled", "overlay.track.Whisker", "overlay.track.Touch"]
+    assert keys == ["overlay.enabled", "overlay.track.Whisker", "overlay.track.Touch", "overlay.hide_blank"]
     video.apply_setting("overlay.track.Whisker", False)
     video.apply_setting("overlay.track.Touch", False)
     assert video.lines.hidden == {"Whisker"} and video.markers.hidden == {"Touch"}
@@ -535,7 +535,7 @@ def _select_clip(window):
 
 def test_settings_carry_their_group(grouped_window):
     groups = {s.label: s.group for s in next(v for v in grouped_window.views).settings() if s.kind == "toggle"}
-    assert groups == {"Show overlays": None, "Lick": "Events", "Draw Whisker A": "Whiskers", "Draw Whisker B": "Whiskers"}
+    assert groups == {"Show overlays": None, "Hide overlays on blank frames": None, "Lick": "Events", "Draw Whisker A": "Whiskers", "Draw Whisker B": "Whiskers"}
 
 
 def test_a_group_has_one_switch_above_its_members_and_it_reflects_them(grouped_window):
@@ -634,3 +634,33 @@ def test_nothing_is_drawn_on_a_blank_frame_and_the_overlays_come_back_with_the_p
     video._wanted = 32
     video._on_frame(32, np.full((48, 64), 40, dtype=np.uint8))       # a dim picture is still a picture
     assert not video.widget.blank
+
+
+def test_the_blank_level_and_whether_to_hide_come_from_the_project_and_the_viewer_can_change_them(window, qapp):
+    video = _video(window)
+    assert video.blank_level == 2.0 and video.widget.hide_blank               # cautious defaults: only an essentially black frame
+    video.resize(480, 360)
+    video.show()
+    video._wanted = 30
+    video._on_frame(30, np.full((48, 64), 20, dtype=np.uint8))               # dim, but more than the default level
+    assert not video.widget.blank
+    video.blank_level = 8.0                                                  # a project whose blackouts are not quite black
+    video._on_frame(30, np.full((48, 64), 20, dtype=np.uint8))
+    assert video.widget.blank
+    painted = []
+
+    class Spy:
+        def set_time(self, _t):
+            pass
+
+        def paint(self, *_args):
+            painted.append(1)
+
+    video.widget.layers.append(Spy())
+    video.widget.grab()
+    assert not painted
+    window.set_view_setting(video, "overlay.hide_blank", False)              # the viewer wants them anyway
+    video.widget.grab()
+    assert painted and window.settings()["view_settings"]["Clip"]["overlay.hide_blank"] is False
+    video.reset_settings()
+    assert video.widget.hide_blank

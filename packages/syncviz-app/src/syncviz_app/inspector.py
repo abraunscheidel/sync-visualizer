@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from syncviz.epochs import UNBOUNDED
 from syncviz.inspection import (
     Details, Field, Scope, Target, WHOLE, event_fields, interval_fields, timeseries_fields,
 )
@@ -23,6 +24,8 @@ class Inspector:
         if nav is None:
             return WHOLE
         start, stop = nav.bounds
+        if start <= -UNBOUNDED / 10 or stop >= UNBOUNDED / 10:           # the whole recording, whatever its length
+            return WHOLE
         return Scope(f"this {nav.label.lower()}", start, stop)
 
     def _described(self, target: Target) -> str:

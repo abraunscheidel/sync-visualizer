@@ -2516,3 +2516,22 @@ Commands on a named event: **Only segments with this event** (a chip in segment 
 and **Clip window…**. The segmentation dropdown now exists only when a project declares more than one segmentation of its own; windows
 around events are no longer declared that way in the whisker project, and "windows the user made" and the `sources:` form of a derived
 segmentation were removed.
+
+### 28.13 Generality review (October 2026)
+
+A look back at what was added for the whisker data set, to keep the core applicable to other experiments. Fixed now:
+
+* **Overlays on dark frames.** The rule "no annotation where there is no picture" had a threshold tuned to this data. It is now a view
+  setting: `overlay: {blank_level: 8, hide_on_blank: true}` in the project, a toggle in the Views list, and a cautious default (only an
+  essentially black frame, level 2).
+* **Clips and conditions assumed trials.** A project with no segmentations now has one segment, the whole recording (`segmentation_specs`
+  gives `recording`; its edges are `UNBOUNDED`), so clips and event conditions work for continuous behaviour; statistics over it are over
+  the whole recording and the timeline strip draws nothing for it.
+
+Still open, to discuss after the planned work (epochs, groups, aggregation, health report, profile layer):
+
+* **The video view is grayscale only** (it decodes to brightness). A colour camera would lose its colour.
+* **The NWB reader knows about units' `depth` and `layer`** (labels like "Unit 7 · L4", ordering by depth). Another experiment's columns
+  would show only ids. This belongs to the profile layer (28.9).
+* **Conditions look only at events.** Conditions on a continuous signal ("angle above 20 degrees for more than 100 ms") need event
+  detectors that turn a signal into events; the architecture allows it and nothing builds it yet.

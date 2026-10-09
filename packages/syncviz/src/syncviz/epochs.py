@@ -22,6 +22,7 @@ from syncviz.resources.events import EventSeries
 from syncviz.resources.intervals import IntervalSeries
 
 EDGES = ("overlap", "start", "stop")
+UNBOUNDED = 1.0e9                          # seconds: the edges of a segment that is the whole recording, whatever its length
 ANCHORS = ("span", "start", "stop")        # what an event that lasts is cut around: all of it, its start, or its end
 
 

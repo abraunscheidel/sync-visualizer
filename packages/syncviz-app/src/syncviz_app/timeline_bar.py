@@ -126,6 +126,7 @@ class TimelineBar(QWidget):
         nav = self.context.navigator
         if nav is not None:
             iv = nav.intervals
+            whole = bool(len(iv) and iv.starts[0] <= -1e8)
             matching = QColor("#4fa3e0"); matching.setAlpha(95)
             dimmed = QColor(text); dimmed.setAlpha(8)
             hatch = QColor(text); hatch.setAlpha(70)
@@ -142,12 +143,13 @@ class TimelineBar(QWidget):
                         p.fillRect(rect, QBrush(hatch, Qt.BrushStyle.BDiagPattern))
                     else:
                         p.fillRect(rect, dimmed)
-                elif i % 2 == 0:
+                elif i % 2 == 0 and not whole:
                     p.fillRect(QRectF(x0, top, max(x1 - x0, 1), groove_h), band)
-            x0, x1 = self._x_of(nav.bounds[0]), self._x_of(nav.bounds[1])
-            p.fillRect(QRectF(x0, top, max(x1 - x0, 2), groove_h), current)
+            if not whole:                         # a segment that is the whole recording needs no highlight
+                x0, x1 = self._x_of(nav.bounds[0]), self._x_of(nav.bounds[1])
+                p.fillRect(QRectF(x0, top, max(x1 - x0, 2), groove_h), current)
 
-        if tl.selection is not None:
+        if tl.selection is not None and not (tl.selection[0] <= tl.start and tl.selection[1] >= tl.stop):
             a, b = tl.selection
             sel = QColor("#4fa3e0"); sel.setAlpha(50)
             p.fillRect(QRectF(self._x_of(a), top, max(self._x_of(b) - self._x_of(a), 2), groove_h), sel)

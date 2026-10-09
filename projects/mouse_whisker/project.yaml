@@ -114,6 +114,9 @@ views:
     # when its event happens at the frame on screen and fades. The viewer can change the corner and hide events from the
     # Views list; this is what it starts with.
     overlay:
+      # The sync blackouts in this dataset are not quite black, so a frame this dark (of 255) on average has no picture and the
+      # overlays are not drawn on it. Without this the default (2) only catches frames that are essentially black.
+      blank_level: 8
       corner: top-right
       decay: 0.25
       rows:

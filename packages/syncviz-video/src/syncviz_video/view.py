@@ -27,7 +27,7 @@ FADE_STEP = 0.18
 # Video range (black ~16, white ~235) stretched to full range for display.
 _VIDEO_RANGE_LUT = np.clip((np.arange(256) - 16) * 255.0 / 219.0, 0, 255).astype(np.uint8)
 
-BLANK_MEAN_LUMA = 8.0      # of 255: a frame this dark on average is a blackout, not a picture; annotations are not drawn on it
+DEFAULT_BLANK_LEVEL = 2.0   # of 255: a frame this dark on average (after video range is stretched) is taken to have no picture on it
 
 
 class _Decoder(QObject):
@@ -94,6 +94,7 @@ class _FrameWidget(QWidget):
         self.layers: list = []                # drawn over the picture (see overlays.py)
         self.layers_visible = True            # one switch for all of them
         self.blank = False                    # the frame on screen is (nearly) black: there is no picture to annotate
+        self.hide_blank = True                # ... and then the overlays are not drawn on it
         self._placeholder_mix = 0.0           # 0 = frame fully shown, 1 = placeholder fully shown
         self._target_mix = 0.0
         self._timer = QTimer(self)
@@ -139,7 +140,7 @@ class _FrameWidget(QWidget):
             target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
             p.setOpacity(1.0 - self._placeholder_mix)
             p.drawImage(target, self._image)
-            for layer in self.layers if self.layers_visible and not self.blank else []:
+            for layer in self.layers if self.layers_visible and not (self.blank and self.hide_blank) else []:
                 layer.paint(p, target, (iw, ih))
             p.setOpacity(1.0)
         if self._placeholder_mix > 0.0 or self._image is None:
@@ -192,6 +193,12 @@ class VideoView(View):
         self._track_defaults: set[str] = set()
         self._badge_defaults = {"corner": DEFAULT_CORNER, "hidden": set()}
         overlay = spec.get("overlay")
+        # A frame darker than `blank_level` has no picture to annotate. The default only catches frames that are essentially black; a
+        # project whose blackout frames are not quite black raises it, one whose pictures are genuinely dark can switch it off
+        # (`hide_on_blank: false`), and the viewer can switch it from the Views list.
+        self.blank_level = float((overlay or {}).get("blank_level", DEFAULT_BLANK_LEVEL))
+        self._hide_blank_default = bool((overlay or {}).get("hide_on_blank", True))
+        self.widget.hide_blank = self._hide_blank_default
         if overlay:
             self._build_tracking(context, overlay)           # under the badges
             if overlay.get("rows"):
@@ -307,11 +314,17 @@ class VideoView(View):
             if layer is not None:
                 out += [ViewSetting(f"overlay.track.{item['name']}", f"Draw {item['name']}", "toggle", item["name"] not in layer.hidden,
                                     description=item.get("description", ""), group=item.get("group")) for item in layer.items]
+        out.append(ViewSetting("overlay.hide_blank", "Hide overlays on blank frames", "toggle", self.widget.hide_blank,
+                               description="Do not draw tracking or badges on a frame that is (nearly) black, since there is no "
+                                           "picture for them to describe."))
         return out
 
     def apply_setting(self, key: str, value) -> None:
         if key == "overlay.enabled":
             self.widget.layers_visible = bool(value)
+            self.widget.update()
+        elif key == "overlay.hide_blank":
+            self.widget.hide_blank = bool(value)
             self.widget.update()
         elif key == "overlay.corner" and self.badges is not None:
             self.badges.set_corner(value)
@@ -333,6 +346,7 @@ class VideoView(View):
 
     def reset_settings(self) -> None:
         self.widget.layers_visible = True
+        self.widget.hide_blank = self._hide_blank_default
         if self.badges is not None:
             self.badges.set_corner(self._badge_defaults["corner"])
             self.badges.set_hidden(self._badge_defaults["hidden"])
@@ -386,7 +400,7 @@ class VideoView(View):
             image = _VIDEO_RANGE_LUT[image]
         image = np.ascontiguousarray(image)
         h, w = image.shape
-        self.widget.blank = float(image.mean()) < BLANK_MEAN_LUMA     # a blackout frame has nothing to draw tracking on
+        self.widget.blank = float(image.mean()) < self.blank_level    # a blackout frame has nothing to draw tracking on
         self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
         self._shown = n
         self._update_layers()
