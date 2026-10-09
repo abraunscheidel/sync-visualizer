@@ -194,6 +194,10 @@ class EventConditions:
     def add(self, condition: Condition) -> bool:
         return self._change(self.items + [condition])
 
+    def add_many(self, conditions: list[Condition]) -> bool:
+        """Add several conditions as one change: all of them, or none if together they would leave nothing."""
+        return self._change(self.items + list(conditions))
+
     def replace(self, index: int, condition: Condition) -> bool:
         return self._change(self.items[:index] + [condition] + self.items[index + 1:])
 

@@ -247,6 +247,33 @@ class MainWindow(QMainWindow):
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 self.context.events.set_clip(name, *dialog.values())
 
+        def named(targets) -> list[str] | None:
+            names = [self.context.events.name_of(t) for t in targets]
+            return None if any(n is None for n in names) else names
+
+        def keep_many(mode: str, answer: bool, together: bool):
+            """A command for several selected events: one condition holding them all (any of / none of), or one for each (all of)."""
+            def run(targets, _origin) -> None:
+                names = named(targets)
+                if names is None:
+                    return
+                conditions = ([Condition((n,), answer, mode=mode) for n in names] if together
+                              else [Condition(tuple(names), answer, mode=mode)])
+                if self.context.events.add_many(conditions):
+                    self.events_dock.show()
+                    self.events_dock.raise_()
+            return run
+
+        every_event = lambda targets: len(targets) > 1 and named(targets) is not None
+        registry.register(Command("events_any", "Only segments with any of these events", run_many=keep_many("segment", True, False),
+                                  applies_many=every_event, description="Keep the segments where at least one of them happened"))
+        registry.register(Command("events_all", "Only segments with all of these events", run_many=keep_many("segment", True, True),
+                                  applies_many=every_event, description="Keep the segments where every one of them happened"))
+        registry.register(Command("events_none", "Only segments with none of these events", run_many=keep_many("segment", False, False),
+                                  applies_many=every_event, description="Keep the segments where not one of them happened"))
+        registry.register(Command("clip_many", "Clip around these events", run_many=keep_many("clip", True, False),
+                                  applies_many=every_event,
+                                  description="Move between just the moments around any of them, each with its own clip window"))
         registry.register(Command("clip_around", "Clip around this event", clip_around,
                                   applies=lambda t: self.context.events.name_of(t) is not None,
                                   description="Move between just the moments around every occurrence of this event, using its "

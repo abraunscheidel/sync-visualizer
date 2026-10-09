@@ -57,31 +57,73 @@ def same_item(a: "Target | None", b: "Target | None") -> bool:
 
 
 class Selection:
-    """The one item the user has selected, shared by every view and panel like the playhead is (design doc 28.7).
-    Selecting never moves time or playback."""
+    """What the user has selected, shared by every view and panel like the playhead is (design doc 28.7, 28.11): any number of
+    items, in the order they were chosen. Selecting never moves time or playback.
+
+    A plain click replaces the selection with one item (`set`), Ctrl-click adds or removes one (`toggle`), Shift-click selects the
+    run from the item last clicked to this one in the order the view lists its items (`extend`). `target` is the item chosen last,
+    for views that can show only one."""
 
     def __init__(self) -> None:
-        self.target: "Target | None" = None
+        self.targets: list["Target"] = []
+        self.anchor: "Target | None" = None           # where a Shift-click range starts: the item last clicked
         self._observers: list = []
+
+    @property
+    def target(self) -> "Target | None":
+        return self.targets[-1] if self.targets else None
 
     def subscribe(self, observer) -> None:
         self._observers.append(observer)
 
-    def set(self, target: "Target | None") -> None:
-        if target == self.target:
+    def _replace(self, targets: list["Target"]) -> None:
+        if targets == self.targets:
             return
-        self.target = target
+        self.targets = targets
         for observer in list(self._observers):
             try:
-                observer(target)
+                observer(list(targets))
             except RuntimeError:                       # an observer whose widget has been deleted
                 self._observers.remove(observer)
+
+    def set(self, target: "Target | None") -> None:
+        """Select just this item (or nothing)."""
+        self.anchor = target
+        self._replace([] if target is None else [target])
+
+    def set_all(self, targets) -> None:
+        """Select exactly these items."""
+        unique: list["Target"] = []
+        for t in targets:
+            if not any(same_item(t, u) for u in unique):
+                unique.append(t)
+        self.anchor = unique[-1] if unique else None
+        self._replace(unique)
+
+    def toggle(self, target: "Target") -> None:
+        """Add the item to the selection, or take it out if it is in."""
+        self.anchor = target
+        if self.is_selected(target):
+            self._replace([t for t in self.targets if not same_item(t, target)])
+        else:
+            self._replace(self.targets + [target])
+
+    def extend(self, target: "Target", ordered: list["Target"]) -> None:
+        """Select the run of `ordered` (the view's items, in its order) from the item last clicked to this one. Without a usable
+        starting point it selects just this item."""
+        position = next((i for i, t in enumerate(ordered) if same_item(t, target)), None)
+        start = next((i for i, t in enumerate(ordered) if same_item(t, self.anchor)), None)
+        if position is None or start is None:
+            self.set(target)
+            return
+        lo, hi = sorted((start, position))
+        self._replace(list(ordered[lo:hi + 1]))        # the anchor stays, so a longer or shorter run can follow
 
     def clear(self) -> None:
         self.set(None)
 
     def is_selected(self, target: "Target | None") -> bool:
-        return same_item(self.target, target)
+        return any(same_item(t, target) for t in self.targets)
 
 
 @dataclass

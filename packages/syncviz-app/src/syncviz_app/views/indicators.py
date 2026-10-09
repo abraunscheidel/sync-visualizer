@@ -35,8 +35,8 @@ class _Lamps(QWidget):
         self.labels = labels
         self.columns = None if columns is None else max(int(columns), 1)     # None: pick the best fit
         self.levels = np.zeros(len(labels))
-        self.selected: int | None = None                  # the tile of the selected item, outlined
-        self.on_press = None                              # called with (point, double); the view acts on what is there
+        self.selected: set[int] = set()                   # the tiles of the selected items, outlined
+        self.on_press = None                              # called with (point, double, modifiers); the view acts on what is there
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(120, 60)
 
@@ -66,15 +66,15 @@ class _Lamps(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.on_press is not None:
-            self.on_press(event.position().toPoint(), False)
+            self.on_press(event.position().toPoint(), False, event.modifiers())
 
     def mouseDoubleClickEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.on_press is not None:
-            self.on_press(event.position().toPoint(), True)
+            self.on_press(event.position().toPoint(), True, event.modifiers())
 
-    def set_selected(self, index: int | None) -> None:
-        if index != self.selected:
-            self.selected = index
+    def set_selected(self, indices: set[int]) -> None:
+        if indices != self.selected:
+            self.selected = set(indices)
             self.update()
 
     def set_levels(self, levels: np.ndarray) -> None:
@@ -97,7 +97,7 @@ class _Lamps(QWidget):
             p.setPen(QPen(outline, 1))
             p.setBrush(fill)
             p.drawRoundedRect(rect, 6, 6)
-            if i == self.selected:
+            if i in self.selected:
                 p.setPen(QPen(lit.lighter(130), 3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 6, 6)
@@ -143,13 +143,16 @@ class IndicatorsView(View):
         self.enable_hover(self.lamps)
         self.lamps.on_press = self._pressed
 
-    def _pressed(self, point, double: bool) -> None:
+    def _pressed(self, point, double: bool, modifiers=None) -> None:
         target = self.target_at(self.lamps.mapTo(self, point))
         if target is not None:
-            self.context.commands.trigger("double_click" if double else "click", target, self)
+            self.click_at(target, modifiers, double)
+
+    def selectable_targets(self):
+        return [row_target(row["spec"]) for row in self.rows]
 
     def selection_changed(self) -> None:
-        self.lamps.set_selected(next((i for i, row in enumerate(self.rows) if self.is_selected(row_target(row["spec"]))), None))
+        self.lamps.set_selected({i for i, row in enumerate(self.rows) if self.is_selected(row_target(row["spec"]))})
 
     def target_at(self, pos):
         point = self.lamps.mapFrom(self, pos)

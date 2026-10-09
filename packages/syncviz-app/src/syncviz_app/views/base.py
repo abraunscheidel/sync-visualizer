@@ -7,7 +7,7 @@ playhead has moved.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtWidgets import QToolTip, QWidget
 
 from dataclasses import dataclass
@@ -78,6 +78,24 @@ class View(QWidget):
     def selection_changed(self) -> None:
         """The shared selection changed; a view that can show which of its items is selected redraws that."""
 
+    def selectable_targets(self) -> list[Target]:
+        """The items this view shows, in the order it lists them, so a Shift-click can select the run between two. Views that show
+        several items override this."""
+        return []
+
+    def click_at(self, target: Target, modifiers=None, double: bool = False) -> None:
+        """A click on `target` in this view: Ctrl adds or removes it from the selection, Shift selects the run from the last one
+        clicked, and a plain click (or double click) runs the command the project binds to it (select, and so on)."""
+        selection = self.context.selection
+        if not double and modifiers is not None:
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                selection.toggle(target)
+                return
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                selection.extend(target, self.selectable_targets())
+                return
+        self.context.commands.trigger("double_click" if double else "click", target, self)
+
     def select_at(self, pos: QPoint) -> bool:
         """Select whatever is under `pos` (this view's coordinates). Returns whether there was something. Selecting never
         moves time or playback (design doc 28.7)."""
@@ -130,10 +148,19 @@ class View(QWidget):
         """The context menu: the actions that apply to what is under `pos`."""
         registry = self.context.commands
         target = self.target_at(pos) if registry is not None else None
-        if target is not None:
-            actions = registry.for_target(target, self)
+        if target is None:
+            return
+        selection = self.context.selection
+        if selection.is_selected(target) and len(selection.targets) > 1:      # on a selected item: act on the whole selection
+            actions = registry.for_targets(selection.targets, self)
             if actions:
-                build_menu(actions, target, self, self).exec(global_pos)
+                build_menu(actions, list(selection.targets), self, self).exec(global_pos)
+            return
+        if not selection.is_selected(target):                                  # on something else: that becomes the selection
+            selection.set(target)
+        actions = registry.for_target(target, self)
+        if actions:
+            build_menu(actions, target, self, self).exec(global_pos)
 
     def hover_text(self, pos: QPoint) -> str:
         inspector = self.context.inspector

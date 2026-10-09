@@ -161,6 +161,10 @@ class _Click:
     def double(self):
         return self._double
 
+    def modifiers(self):
+        from PySide6.QtCore import Qt
+        return Qt.KeyboardModifier.NoModifier
+
 
 def _scene_point(view, x, y):
     import pyqtgraph as pg
@@ -184,7 +188,7 @@ def test_clicking_a_tile_selects_it_and_shows_its_details_without_moving_time(wi
     names = [panel.tree.topLevelItem(g).child(c).text(0) for g in range(panel.tree.topLevelItemCount())
              for c in range(panel.tree.topLevelItem(g).childCount())]
     assert "depth" in names and "layer" in names                  # everything is in the panel, not only the brief figures
-    assert view.lamps.selected == view.rows.index(next(r for r in view.rows if r["name"] == "Unit 12 · L5b"))
+    assert view.lamps.selected == {view.rows.index(next(r for r in view.rows if r["name"] == "Unit 12 · L5b"))}
 
 
 def test_the_selected_row_is_marked_in_the_tracks_view_and_clearing_unmarks_it(window):
@@ -194,9 +198,9 @@ def test_the_selected_row_is_marked_in_the_tracks_view_and_clearing_unmarks_it(w
     tracks.refresh(3.0)
     QApplication.instance().processEvents()
     window.context.selection.set(__import__("syncviz_app.views.rows", fromlist=["row_target"]).row_target(tracks.rows[1]["spec"]))
-    assert tracks.band.isVisible() and tracks.band.getRegion() == (tracks.rows[1]["y"] - 0.5, tracks.rows[1]["y"] + 0.5)
+    assert tracks.bands[0].isVisible() and tracks.bands[0].getRegion() == (tracks.rows[1]["y"] - 0.5, tracks.rows[1]["y"] + 0.5)
     window.context.selection.clear()
-    assert not tracks.band.isVisible() and window.details_panel.title.text().startswith("Click something")
+    assert not tracks.bands[0].isVisible() and window.details_panel.title.text().startswith("Click something")
 
 
 def test_a_click_selects_where_there_is_something_and_a_double_click_seeks(window):

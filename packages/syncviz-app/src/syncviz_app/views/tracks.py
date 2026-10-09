@@ -31,11 +31,7 @@ class TracksView(TimeWindowView):
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         self.rows = []
-        self.band = pg.LinearRegionItem(values=(0, 0), orientation="horizontal", movable=False,
-                                        brush=pg.mkBrush(224, 160, 48, 50), pen=pg.mkPen(None))
-        self.band.setZValue(-10)
-        self.band.hide()
-        self.plot.addItem(self.band, ignoreBounds=True)
+        self.bands: list = []                              # one highlight per selected row, made as needed
         self._build(spec["rows"])
         self.plot.getAxis("left").setWidth(110)
         self.enable_hover(self.plot.viewport())
@@ -73,13 +69,35 @@ class TracksView(TimeWindowView):
         if self._last_time is not None:
             self.refresh(self._last_time)
 
+    def _band(self, i: int):
+        while len(self.bands) <= i:
+            band = pg.LinearRegionItem(values=(0, 0), orientation="horizontal", movable=False,
+                                       brush=pg.mkBrush(224, 160, 48, 50), pen=pg.mkPen(None))
+            band.setZValue(-10)
+            band.hide()
+            self.plot.addItem(band, ignoreBounds=True)
+            self.bands.append(band)
+        return self.bands[i]
+
     def mark_selected(self) -> None:
-        row = next((r for r in self.rows if self.is_selected(row_target(r["spec"]))), None)
-        if row is None:
-            self.band.hide()
-        else:
-            self.band.setRegion((row["y"] - 0.5, row["y"] + 0.5))
-            self.band.show()
+        chosen = [r for r in self.rows if self.is_selected(row_target(r["spec"]))]
+        for i, row in enumerate(chosen):
+            band = self._band(i)
+            band.setRegion((row["y"] - 0.5, row["y"] + 0.5))
+            band.show()
+        for band in self.bands[len(chosen):]:
+            band.hide()
+
+    def selectable_targets(self):
+        return [row_target(r["spec"]) for r in self.rows]
+
+    def show_targets(self, targets) -> bool:
+        specs = [self.spec_for(t) for t in targets]
+        specs = [s for s in specs if s is not None]
+        if not specs:
+            return False
+        self._build([row for s in specs for row in s["rows"]])
+        return True
 
     def target_at(self, pos):
         """The row under the pointer; for an events row, the event itself when the pointer is within a few pixels of it."""

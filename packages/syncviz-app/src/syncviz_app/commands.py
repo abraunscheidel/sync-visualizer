@@ -34,6 +34,8 @@ class Command:
     shortcut: str = ""                                            # shown in the menu; bound to the selection by the window
     children: Callable[[Target, object], list["Command"]] | None = None   # makes this a submenu: (target, the view it was pointed at in)
     description: str = ""
+    run_many: Callable[[list[Target], object], None] | None = None      # the same thing for several selected items at once
+    applies_many: Callable[[list[Target]], bool] = lambda targets: True
 
 
 class CommandRegistry:
@@ -76,6 +78,17 @@ class CommandRegistry:
             out.append(action)
         return out
 
+    def for_targets(self, targets: list[Target], origin=None) -> list[Command]:
+        """The commands that act on all of `targets` at once (those with a `run_many` that applies to the whole set)."""
+        return [a for a in self.all() if a.run_many is not None and a.applies_many(targets)]
+
+    def run_many(self, action_id: str, targets: list[Target], origin=None) -> bool:
+        action = self.get(action_id)
+        if action is None or action.run_many is None or not targets or not action.applies_many(targets):
+            return False
+        action.run_many(targets, origin)
+        return True
+
     def run(self, action_id: str, target: Target | None, origin=None) -> bool:
         """Run one action on a target if it applies. Returns whether it ran."""
         action = self.get(action_id)
@@ -114,21 +127,26 @@ class CommandRegistry:
                                    shortcut=keys.get("clear_selection", "")))
 
 
-def build_menu(actions: list[Command], target: Target, origin, parent=None) -> QMenu:
-    """A context menu of `actions` for `target`. Submenus come from actions that have children."""
+def build_menu(actions: list[Command], target: Target | list[Target], origin, parent=None) -> QMenu:
+    """A context menu of `actions` for `target` (or for a list of selected items, running each command's `run_many`).
+    Submenus come from actions that have children."""
     menu = QMenu(parent)
     _fill(menu, actions, target, origin)
     return menu
 
 
-def _fill(menu: QMenu, actions: list[Command], target: Target, origin) -> None:
+def _fill(menu: QMenu, actions: list[Command], target, origin) -> None:
+    many = isinstance(target, list)
     for action in actions:
-        if action.children is not None:
+        if not many and action.children is not None:
             _fill(menu.addMenu(action.label), action.children(target, origin), target, origin)
             continue
         text = f"{action.label}\t{action.shortcut}" if action.shortcut else action.label
         entry = QAction(text, menu)
         if action.description:
             entry.setToolTip(action.description)
-        entry.triggered.connect(lambda _checked=False, a=action: a.run(target, origin))
+        if many:
+            entry.triggered.connect(lambda _checked=False, a=action: a.run_many(target, origin))
+        else:
+            entry.triggered.connect(lambda _checked=False, a=action: a.run(target, origin))
         menu.addAction(entry)

@@ -2539,3 +2539,15 @@ Still open, to discuss after the planned work (epochs, groups, aggregation, heal
 ### 28.14 Later: manual segments and marks
 
 Not built; recorded so it is not lost, and not a priority. A user could cut a continuous recording into segments by hand, and mark single moments. Both fit what exists: a segmentation is a list of intervals with attributes, so the navigator, filters, event conditions, clips and statistics would treat hand-made segments like trials, and a hand-made mark is an event, so it would appear as an event tile and work in conditions. What is missing: ways to create them (in and out at the playhead, drag on the timeline strip, split at the playhead), to edit and delete them, a name and optional tags or attributes so they can be filtered on, and storage. They are the user's own data about one recording, so they belong with the per-recording state (a file next to the project, written only when the user saves), not in the workspace. A project would declare a manual segmentation type so it appears with the others. This stays small and is not a general annotation system.
+
+**Multi-selection (built, from 28.11).** `Selection` holds any number of items in the order they were chosen (`targets`; `target` is the
+one chosen last, for views that can show only one). A plain click replaces the selection, Ctrl-click adds or removes an item, Shift-click
+selects the run from the item last clicked to this one in the order the view lists its items (`View.selectable_targets`); a double click
+ignores the modifiers and runs its bound command. Every selected tile or row is marked. Right-click on a selected item offers the
+commands that act on the whole selection (a `Command` with `run_many` and `applies_many`); right-click on anything else makes it the
+selection and offers the one-item menu. Commands for several events: only segments with any of / all of / none of these events (one
+condition holding them all, one each, or one holding them with "did not happen"), and Clip around these events (any of them, each with
+its own clip); a set of conditions that together would leave nothing is refused as one. The Details panel shows a table with a row for
+each selected item and its brief figures (names only above 60 items), and the full details of the row the user clicks in it; the choice
+of row is the user's, in the panel, and does not change the selection. A following tracks view shows every selected item it can.
+Not yet: a drag-rectangle, and "Save as group" (with the groups work).

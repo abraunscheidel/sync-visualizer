@@ -55,6 +55,10 @@ class TimeWindowView(View):
         Views that can follow the selection override this."""
         return False
 
+    def show_targets(self, targets) -> bool:
+        """Show the selected items; a view that can show several overrides this, the rest show the one chosen last."""
+        return self.show_target(targets[-1]) if targets else False
+
     @property
     def can_follow(self) -> bool:
         return type(self).show_target is not TimeWindowView.show_target
@@ -83,7 +87,7 @@ class TimeWindowView(View):
     def selection_changed(self) -> None:
         target = self.context.selection.target
         if self.follow and target is not None:
-            if self.show_target(target) and self._last_time is not None:
+            if self.show_targets(self.context.selection.targets) and self._last_time is not None:
                 self.refresh(self._last_time)
         self.mark_selected()
 
@@ -100,7 +104,8 @@ class TimeWindowView(View):
         # there is nothing to act on, a click seeks. The click is in this view's time; the playhead is `lag` later.
         pos = self.plot.mapTo(self, self.plot.mapFromScene(event.scenePos()))
         target = self.target_at(pos)
-        if target is not None and self.context.commands.trigger("double_click" if event.double() else "click", target, self):
+        if target is not None:
+            self.click_at(target, event.modifiers(), event.double())
             return
         self.seek_from_time(float(viewbox.mapSceneToView(event.scenePos()).x()) + self.lag)
 
