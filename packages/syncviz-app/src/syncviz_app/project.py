@@ -130,6 +130,12 @@ class ResourceStore:
         """Drop a result kept by `cached`, so it is made again with whatever has changed."""
         self._cache.pop(("cached",) + key, None)
 
+    def kind_of(self, ref: str) -> str | None:
+        """What the source says is at `ref` (`events`, `intervals`, ...), or None."""
+        name, path = split_ref(ref)
+        source = self.source(name)
+        return self._get(("kind", ref), lambda: next((e.kind for e in source.catalog() if e.path == path), None))
+
     def cached(self, key: tuple, load):
         """`load()`, done once per key for this recording."""
         return self._get(("cached",) + key, load)
@@ -138,7 +144,7 @@ class ResourceStore:
         """What `ref` holds, as an `EventSeries` or an `IntervalSeries`, whichever the source says it is."""
         name, path = split_ref(ref)
         source = self.source(name)
-        kind = self._get(("kind", ref), lambda: next((e.kind for e in source.catalog() if e.path == path), None))
+        kind = self.kind_of(ref)
         if kind == "intervals":
             return self.intervals(ref)
         return self.events(ref, member)
@@ -220,6 +226,12 @@ class Project:
         """The events the user can build conditions from, by scope: `events: {Contacts: {Whisker C0 touch: {from: ...}}}`."""
         return {str(group): {str(name): dict(spec) for name, spec in (events or {}).items()}
                 for group, events in (self.config.get("events") or {}).items()}
+
+    @property
+    def track_default(self) -> list[str]:
+        """`track: [Lick left, Contact C0]` in the project file: the events the tracker shows until the viewer chooses their own.
+        None by default."""
+        return [str(n) for n in (self.config.get("track") or [])]
 
     @property
     def clip_defaults(self) -> dict:

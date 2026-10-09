@@ -8,14 +8,12 @@ import pytest
 from pynwb import NWBFile, NWBHDF5IO
 from pynwb.behavior import BehavioralEvents
 from pynwb.epoch import TimeIntervals
-from PySide6.QtWidgets import QApplication, QCheckBox
+from PySide6.QtWidgets import QApplication
 
 from syncviz_app.add_view_dialog import AddViewDialog
 from syncviz_app.app import build_window
 from syncviz_app.context import explain
 from syncviz_nwb import NWBSource
-
-from test_app_smoke import FPS, _write_video
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -72,28 +70,24 @@ def test_an_explanation_is_the_description_then_the_projects_note_and_either_may
 # -- where it shows -----------------------------------------------------------------------------------------
 @pytest.fixture
 def window(tmp_path, qapp):
-    _write_video(tmp_path / "clip.mkv")
     _write_nwb(tmp_path / "session.nwb")
-    (tmp_path / "project.yaml").write_text(f"""
+    (tmp_path / "project.yaml").write_text("""
 name: described
 sources:
-  session: {{type: nwb, path: session.nwb}}
-  video: {{type: video, path: clip.mkv, fps: {FPS}}}
+  session: {type: nwb, path: session.nwb}
 glossary:
   stimulus: "Concave and convex are the two shapes the mouse learns to tell apart."
   Lick left: "The tongue touched the left spout."
   Licks: "Tongue contacts with the spouts."
 segmentations:
-  trials: {{label: Trial, from: "session:intervals/trials", filters: [stimulus, plain]}}
+  trials: {label: Trial, from: "session:intervals/trials", filters: [stimulus, plain]}
+events:
+  Licks:
+    Lick left: {from: "session:processing/behavior/licks", member: left}
+    Lick right: {from: "session:processing/behavior/licks", member: right}
 views:
-  - type: video
-    title: Clip
-    source: video
-    overlay:
-      rows:
-        - {{name: Lick left, group: Licks, kind: events, from: "session:processing/behavior/licks", member: left}}
-        - {{name: Lick right, group: Licks, kind: events, from: "session:processing/behavior/licks", member: right,
-            description: "Own words for the right lick."}}
+  - type: events
+    title: Tracker
 """, encoding="utf-8")
     w = build_window(tmp_path / "project.yaml")
     w.show()
@@ -120,16 +114,16 @@ def test_the_add_view_dialog_explains_what_each_candidate_is(window):
     assert tips["contacts_C0"] == "time and location of contacts made by whisker C0"
 
 
-def test_the_overlay_switches_explain_themselves_from_the_glossary_or_their_own_description(window):
-    video = next(v for v in window.views if v.title == "Clip")
-    settings = {s.label: s.description for s in video.settings()}
-    assert settings["Lick left"] == "The tongue touched the left spout."
-    assert settings["Lick right"] == "Own words for the right lick."          # the project's description on the item wins as the "file" text
-
-
-def test_the_views_list_shows_those_explanations_as_tooltips_including_for_a_group(window):
-    panel = window.views_panel
-    panel.list.setCurrentRow([v.title for v in window.views].index("Clip"))
-    checks = {c.text(): c for c in panel.findChildren(QCheckBox) if c.property("workspace")}
-    assert checks["Lick left"].toolTip() == "The tongue touched the left spout."
-    assert checks["Licks"].toolTip() == "Tongue contacts with the spouts."
+def test_the_events_in_the_condition_dialog_and_on_the_trackers_tiles_explain_themselves_from_the_glossary(window):
+    from syncviz_app.events_panel import ConditionDialog
+    dialog = ConditionDialog(window.context, None)
+    group = dialog.tree.topLevelItem(0)
+    tips = {group.child(i).text(0): group.child(i).toolTip(0) for i in range(group.childCount())}
+    assert tips == {"Lick left": "The tongue touched the left spout.", "Lick right": ""}      # nothing to say: no empty tooltip
+    tracker = next(v for v in window.views if v.title == "Tracker")
+    tracker.resize(400, 300)
+    window.context.events.track("Lick left")
+    tracker.canvas.relayout()
+    tile = tracker.canvas.tiles[0].rect.center().toPoint()
+    text = tracker.hover_text(tracker.canvas.mapTo(tracker, tile))
+    assert "The tongue touched the left spout." in text and "left spout" in text

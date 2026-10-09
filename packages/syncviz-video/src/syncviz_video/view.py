@@ -15,7 +15,7 @@ from syncviz.sources import MissingDataError
 from syncviz_app.views.base import Candidate, View, ViewSetting
 from syncviz_app.views.rows import load_row_data
 from syncviz_video.overlays import (
-    CORNERS, DEFAULT_CORNER, DEFAULT_DECAY_S, OFF, SKELETON_LABELS, SKELETON_STYLES, ContactMarkers, CornerBadges,
+    DEFAULT_DECAY_S, SKELETON_LABELS, SKELETON_STYLES, ContactMarkers,
     TrackedLines, TrackedSkeletons, palette,
 )
 from syncviz_video.frame_index import FrameIndex
@@ -185,13 +185,11 @@ class VideoView(View):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.widget)
-        self.badges: CornerBadges | None = None
         self.lines: TrackedLines | None = None
         self.skeletons: TrackedSkeletons | None = None
         self._skeleton_style_default = "curve"
         self.markers: ContactMarkers | None = None
         self._track_defaults: set[str] = set()
-        self._badge_defaults = {"corner": DEFAULT_CORNER, "hidden": set()}
         overlay = spec.get("overlay")
         # A frame darker than `blank_level` has no picture to annotate. The default only catches frames that are essentially black; a
         # project whose blackout frames are not quite black raises it, one whose pictures are genuinely dark can switch it off
@@ -200,9 +198,10 @@ class VideoView(View):
         self._hide_blank_default = bool((overlay or {}).get("hide_on_blank", True))
         self.widget.hide_blank = self._hide_blank_default
         if overlay:
-            self._build_tracking(context, overlay)           # under the badges
-            if overlay.get("rows"):
-                self._build_badges(context, overlay)
+            self._build_tracking(context, overlay)
+            if overlay.get("rows") or overlay.get("corner"):
+                context.notes.append(f"view {self.title!r}: overlay `rows` and `corner` (event badges) are no longer supported; "
+                                     f"track the events in an event tracker view instead")
         self._wanted = -1
         self._shown = -1
         self._progress_at = perf_counter()     # when a frame last arrived, or the wait began
@@ -212,8 +211,8 @@ class VideoView(View):
         context.timeline.subscribe(self._on_timeline)
 
     def _build_tracking(self, context, overlay: dict) -> None:
-        """Lines that follow tracked points and rings at contacts, from the overlay's `lines:` and `markers:`. As with the
-        badges, one this recording has no data for is left out with a note."""
+        """Lines that follow tracked points and rings at contacts, from the overlay's `lines:` and `markers:`. One this
+        recording has no data for is left out with a note."""
         colour_index = 0
         lines, markers, skeletons = [], [], []
         for spec in overlay.get("skeletons", []):
@@ -270,28 +269,11 @@ class VideoView(View):
             self.markers = ContactMarkers(markers, float(overlay.get("decay", DEFAULT_DECAY_S)), self._track_defaults)
             self.widget.layers.append(self.markers)
 
-    def _build_badges(self, context, overlay: dict) -> None:
-        """Event badges over the picture, from the project's `overlay:` section. A row whose data this recording does
-        not have is left out, not an error: the picture is still worth showing."""
-        rows = []
-        for row in overlay.get("rows", []):
-            try:
-                data = load_row_data(context, row)
-            except MissingDataError as exc:
-                context.notes.append(f"video overlay row {row.get('name', '')!r} left out: {exc}")
-                continue
-            rows.append({"name": row.get("name", ""), "kind": row["kind"], "data": data, "group": row.get("group"),
-                         "description": context.explain(row.get("name", ""), row.get("description", ""))})
-        self._badge_defaults = {"corner": overlay.get("corner", DEFAULT_CORNER), "hidden": set(overlay.get("hidden", []))}
-        self.badges = CornerBadges(rows, self._badge_defaults["corner"], float(overlay.get("decay", DEFAULT_DECAY_S)),
-                                   self._badge_defaults["hidden"])
-        self.widget.layers.append(self.badges)
-
     def _update_layers(self) -> None:
         """Bring the overlays to the time of the frame on screen (not the playhead, which may be ahead of it)."""
         if self._shown >= 0:
             time = self._shown / self.fps
-            for layer in (self.badges, self.skeletons, self.lines, self.markers):
+            for layer in (self.skeletons, self.lines, self.markers):
                 if layer is not None:
                     layer.set_time(time)
             self.widget.update()
@@ -301,12 +283,6 @@ class VideoView(View):
         if not self.widget.layers:
             return []
         out = [ViewSetting("overlay.enabled", "Show overlays", "toggle", self.widget.layers_visible)]
-        if self.badges is not None and self.badges.rows:
-            labels = {OFF: "Off", **{c: c.replace("-", " ").capitalize() for c in CORNERS}}
-            out.append(ViewSetting("overlay.corner", "Event badges", "choice", self.badges.corner,
-                                   [(labels[c], c) for c in (OFF, *CORNERS)]))
-            out += [ViewSetting(f"overlay.show.{row['name']}", row["name"], "toggle", row["name"] not in self.badges.hidden,
-                                description=row.get("description", ""), group=row.get("group")) for row in self.badges.rows]
         if self.skeletons is not None:
             out.append(ViewSetting("overlay.skeleton_style", "Tracked points", "choice", self.skeletons.style,
                                    [(SKELETON_LABELS[s], s) for s in SKELETON_STYLES]))
@@ -315,7 +291,7 @@ class VideoView(View):
                 out += [ViewSetting(f"overlay.track.{item['name']}", f"Draw {item['name']}", "toggle", item["name"] not in layer.hidden,
                                     description=item.get("description", ""), group=item.get("group")) for item in layer.items]
         out.append(ViewSetting("overlay.hide_blank", "Hide overlays on blank frames", "toggle", self.widget.hide_blank,
-                               description="Do not draw tracking or badges on a frame that is (nearly) black, since there is no "
+                               description="Do not draw the tracking on a frame that is (nearly) black, since there is no "
                                            "picture for them to describe."))
         return out
 
@@ -326,13 +302,6 @@ class VideoView(View):
         elif key == "overlay.hide_blank":
             self.widget.hide_blank = bool(value)
             self.widget.update()
-        elif key == "overlay.corner" and self.badges is not None:
-            self.badges.set_corner(value)
-        elif key.startswith("overlay.show.") and self.badges is not None:
-            name = key[len("overlay.show."):]
-            hidden = set(self.badges.hidden)
-            (hidden.discard if value else hidden.add)(name)
-            self.badges.set_hidden(hidden)
         elif key == "overlay.skeleton_style" and self.skeletons is not None:
             self.skeletons.set_style(value)
         elif key.startswith("overlay.track."):
@@ -347,9 +316,6 @@ class VideoView(View):
     def reset_settings(self) -> None:
         self.widget.layers_visible = True
         self.widget.hide_blank = self._hide_blank_default
-        if self.badges is not None:
-            self.badges.set_corner(self._badge_defaults["corner"])
-            self.badges.set_hidden(self._badge_defaults["hidden"])
         for layer in (self.skeletons, self.lines, self.markers):
             if layer is not None:
                 layer.set_hidden(self._track_defaults)

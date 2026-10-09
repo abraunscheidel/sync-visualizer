@@ -109,6 +109,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)
         self.details_dock = details_dock
         context.events.base = self._navigation_base
+        context.set_view_setting = self.set_view_setting          # lets a view change a setting that is kept with the workspace
         if self.filter_bar is not None:
             context.events.filters_reloaded = self.filter_bar.segments_replaced
         self.events_panel = EventsPanel(context)
@@ -265,6 +266,26 @@ class MainWindow(QMainWindow):
             return run
 
         every_event = lambda targets: len(targets) > 1 and named(targets) is not None
+
+        def tracking(track: bool):
+            def run(targets, _origin) -> None:
+                (self.context.events.track if track else self.context.events.untrack)(*(named(targets) or []))
+            return run
+
+        events = self.context.events
+        registry.register(Command("track_event", "Track this event", lambda t, o: events.track(events.name_of(t)),
+                                  applies=lambda t: events.name_of(t) is not None and not events.is_tracked(events.name_of(t)),
+                                  run_many=tracking(True),
+                                  applies_many=lambda ts: named(ts) is not None and not all(events.is_tracked(n) for n in named(ts)),
+                                  description="Show this event in the event tracker, lighting up when it happens"))
+        registry.register(Command("untrack_event", "Remove from tracker", lambda t, o: events.untrack(events.name_of(t)),
+                                  applies=lambda t: events.name_of(t) is not None and events.is_tracked(events.name_of(t)),
+                                  run_many=tracking(False),
+                                  applies_many=lambda ts: named(ts) is not None and any(events.is_tracked(n) for n in named(ts)),
+                                  description="Stop showing this event in the event tracker"))
+        registry.register(Command("toggle_tracking", "Track or untrack this event", lambda t, o: events.toggle_tracking(events.name_of(t)),
+                                  applies=lambda t: events.name_of(t) is not None, in_menu=False,
+                                  description="What a double-click on an event does"))
         registry.register(Command("events_any", "Only segments with any of these events", run_many=keep_many("segment", True, False),
                                   applies_many=every_event, description="Keep the segments where at least one of them happened"))
         registry.register(Command("events_all", "Only segments with all of these events", run_many=keep_many("segment", True, True),

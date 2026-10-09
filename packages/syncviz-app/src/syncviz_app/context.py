@@ -41,6 +41,7 @@ class AppContext:
     dates: DateFormat = field(default_factory=DateFormat)   # how dates and times are shown
     selection: Selection = field(default_factory=Selection)   # the one item the user has selected
     events: object = None                                 # the EventConditions in force
+    set_view_setting: object = None                       # (view, key, value): change one of a view's settings and keep it
     commands: object = None                               # a CommandRegistry: what can be done with what a view points at
     inspector: object = None                              # an Inspector: the details of what a view points at
 

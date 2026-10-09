@@ -1,4 +1,4 @@
-"""Event badges over the video picture."""
+"""Tracking drawn over the video picture."""
 
 import os
 import time
@@ -15,7 +15,6 @@ from pynwb.epoch import TimeIntervals
 
 from syncviz.core import Seek
 from syncviz_app.app import build_window
-from syncviz_video.overlays import CORNERS, OFF, CornerBadges
 
 from test_app_smoke import FPS, _pump, _reopen, _write_video
 
@@ -30,98 +29,11 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def _rows(**kinds):
-    return [{"name": "Lick", "kind": "events", "data": np.array(LICKS)},
-            {"name": "Contact", "kind": "intervals", "data": (np.array([CONTACT[0]]), np.array([CONTACT[1]]))}]
-
-
-# -- the layer -------------------------------------------------------------------------------------
-def test_an_event_badge_lights_at_the_event_and_fades_and_an_interval_stays_lit_while_it_lasts(qapp):
-    badges = CornerBadges(_rows(), decay=0.2)
-    badges.set_time(1.0)
-    assert dict((n, round(v, 2)) for _s, n, v in badges.lit()) == {"Lick": 1.0}
-    badges.set_time(1.1)
-    assert dict((n, round(v, 2)) for _s, n, v in badges.lit()) == {"Lick": 0.5}
-    badges.set_time(1.3)
-    assert badges.lit() == []
-    badges.set_time(3.2)
-    assert [n for _s, n, _v in badges.lit()] == ["Contact"]
-    badges.set_time(3.4999)
-    assert badges.levels[1] == 1.0
-    badges.set_time(3.6)
-    assert 0 < badges.levels[1] < 1.0
-
-
-def test_an_event_that_has_not_happened_yet_shows_no_badge(qapp):
-    badges = CornerBadges(_rows())
-    badges.set_time(0.5)
-    assert badges.lit() == []
-
-
-def test_hidden_events_are_never_shown_and_the_others_keep_their_slots(qapp):
-    badges = CornerBadges(_rows(), hidden={"Lick"})
-    badges.set_time(1.0)
-    assert badges.lit() == []
-    badges.set_time(3.2)
-    assert badges.lit() == [(0, "Contact", 1.0)]                  # the first shown row takes the first slot
-    shown = CornerBadges(_rows())
-    shown.set_time(3.2)
-    assert shown.lit() == [(1, "Contact", 1.0)]                    # with the lick row shown, contact keeps slot 1 even while the lick is dark
-
-
-def test_the_corner_must_be_a_known_one_or_off(qapp):
-    badges = CornerBadges(_rows())
-    for corner in (*CORNERS, OFF):
-        badges.set_corner(corner)
-    with pytest.raises(ValueError, match="top-right"):
-        badges.set_corner("middle")
-    with pytest.raises(ValueError):
-        CornerBadges(_rows(), decay=0)
-
 
 def _alpha(image):
     """The alpha channel of an ARGB32 image as an array (rows by columns)."""
     raw = np.frombuffer(image.constBits(), np.uint8).reshape(image.height(), image.bytesPerLine() // 4, 4)
     return raw[:, : image.width(), 3].copy()                     # a copy: the buffer belongs to the image
-
-
-def _painted(badges, corner, size=(400, 300)):
-    badges.set_corner(corner)
-    image = QImage(*size, QImage.Format.Format_ARGB32)
-    image.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(image)
-    badges.paint(painter, QRectF(0, 0, *size))
-    painter.end()
-    ys, xs = np.nonzero(_alpha(image))
-    return image, (xs, ys)
-
-
-@pytest.mark.parametrize("corner, left, top", [("top-left", True, True), ("top-right", False, True),
-                                               ("bottom-left", True, False), ("bottom-right", False, False)])
-def test_badges_are_drawn_in_the_chosen_corner_and_nowhere_else(qapp, corner, left, top):
-    badges = CornerBadges(_rows())
-    badges.set_time(1.0)
-    _image, (xs, ys) = _painted(badges, corner)
-    assert len(xs) > 100
-    assert (xs.max() < 200) == left and (ys.max() < 150) == top
-    assert (xs < 200).all() if left else (xs >= 200).all()
-    assert (ys < 150).all() if top else (ys >= 150).all()
-
-
-def test_with_the_corner_off_nothing_is_drawn(qapp):
-    badges = CornerBadges(_rows())
-    badges.set_time(1.0)
-    _image, (xs, _ys) = _painted(badges, OFF)
-    assert len(xs) == 0
-
-
-def test_a_fainter_badge_is_drawn_fainter(qapp):
-    badges = CornerBadges(_rows(), decay=0.2)
-    badges.set_time(1.0)
-    bright, _ = _painted(badges, "top-right")
-    badges.set_time(1.15)
-    faint, _ = _painted(badges, "top-right")
-    assert _alpha(bright)[:60, 250:].max() > _alpha(faint)[:60, 250:].max() > 0
 
 
 # -- in the view and the window --------------------------------------------------------------------------
@@ -139,40 +51,6 @@ def _write_nwb(path):
         io.write(nwb)
 
 
-@pytest.fixture
-def window(tmp_path, qapp):
-    _write_video(tmp_path / "clip.mkv")
-    _write_nwb(tmp_path / "session.nwb")
-    (tmp_path / "project.yaml").write_text(f"""
-name: overlays
-cache: cache
-sources:
-  session: {{type: nwb, path: session.nwb}}
-  video: {{type: video, path: clip.mkv, fps: {FPS}}}
-segmentations:
-  trials: {{label: Trial, from: "session:intervals/trials"}}
-views:
-  - type: video
-    title: Clip
-    source: video
-    overlay:
-      corner: top-right
-      decay: 0.3
-      rows:
-        - {{name: Lick, kind: events, from: "session:processing/behavior/licks", member: left}}
-        - {{name: Contact, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}}
-        - {{name: Missing, kind: events, from: "session:processing/behavior/nothing", member: x}}
-  - type: video
-    title: Plain clip
-    source: video
-""", encoding="utf-8")
-    w = build_window(tmp_path / "project.yaml")
-    w.show()
-    yield w
-    w.close()
-    qapp.processEvents()
-
-
 def _video(window, title="Clip"):
     return next(v for v in window.views if v.title == title)
 
@@ -183,122 +61,6 @@ def _show(window, qapp, time_s):
     video = _video(window)
     assert _pump(qapp, until=lambda: video._shown == round(time_s * FPS))
     return video
-
-
-def test_the_view_builds_its_badges_from_the_project_and_leaves_out_a_row_it_has_no_data_for(window):
-    video = _video(window)
-    assert video.badges is not None and video.badges.names == ["Lick", "Contact"]
-    assert any("'Missing' left out" in n for n in window.context.notes)
-    assert _video(window, "Plain clip").badges is None and _video(window, "Plain clip").settings() == []
-
-
-def test_the_badges_follow_the_frame_on_screen_not_the_playhead(window, qapp):
-    video = _video(window)
-    video._wanted = 90                                           # the playhead has moved on to 3.0 s ...
-    video._on_frame(30, np.full((48, 64), 100, dtype=np.uint8))  # ... but the frame that has arrived is 1.0 s (a lick)
-    assert [n for _s, n, _v in video.badges.lit()] == ["Lick"]
-    video._on_frame(90, np.full((48, 64), 100, dtype=np.uint8))  # now the frame at 3.0 s (inside the contact)
-    assert [n for _s, n, _v in video.badges.lit()] == ["Contact"]
-
-
-def test_a_badge_is_really_drawn_on_the_picture_when_its_event_is_on_screen(window, qapp):
-    video = _show(window, qapp, 1.0)
-    video.resize(480, 360)
-    lit = video.widget.grab().toImage()
-    _show(window, qapp, 0.5)
-    dark = video.widget.grab().toImage()
-    right = [(x, y) for x in range(lit.width() - 140, lit.width()) for y in range(0, 60) if lit.pixel(x, y) != dark.pixel(x, y)]
-    assert right, "the lick badge should appear in the top-right of the picture"
-
-
-def test_the_settings_offer_the_corner_and_a_switch_for_each_event(window):
-    settings = _video(window).settings()
-    assert [s.key for s in settings] == ["overlay.enabled", "overlay.corner", "overlay.show.Lick", "overlay.show.Contact", "overlay.hide_blank"]
-    assert settings[0].kind == "toggle" and settings[0].value is True            # one switch for all overlays
-    corner = settings[1]
-    assert corner.kind == "choice" and corner.value == "top-right"
-    assert [v for _l, v in corner.choices] == ["off", "top-left", "top-right", "bottom-left", "bottom-right"]
-    assert all(s.kind == "toggle" and s.value is True for s in settings[2:])
-
-
-def test_changing_a_setting_changes_the_badges_and_reset_returns_to_the_projects_defaults(window):
-    video = _video(window)
-    video.apply_setting("overlay.corner", "bottom-left")
-    video.apply_setting("overlay.show.Lick", False)
-    assert video.badges.corner == "bottom-left" and video.badges.hidden == {"Lick"}
-    video.reset_settings()
-    assert video.badges.corner == "top-right" and video.badges.hidden == set()
-
-
-def test_the_views_list_shows_the_selected_views_settings_and_changing_them_applies_them(window):
-    panel = window.views_panel
-    panel.list.setCurrentRow([v.title for v in window.views].index("Clip"))
-    combos = [c for c in panel.findChildren(QComboBox) if c.property("workspace") == "saved"]
-    checks = [c for c in panel.findChildren(QCheckBox) if c.property("workspace") == "saved"]
-    assert len(combos) == 1 and [c.text() for c in checks] == ["Show overlays", "Lick", "Contact", "Hide overlays on blank frames"]
-    combos[0].setCurrentIndex(combos[0].findData("off"))
-    assert _video(window).badges.corner == "off"
-    checks[2].setChecked(False)
-    assert _video(window).badges.hidden == {"Contact"}
-    panel.list.setCurrentRow([v.title for v in window.views].index("Plain clip"))
-    assert not [c for c in panel.findChildren(QCheckBox) if c.property("workspace") == "saved"]       # nothing to set here
-
-
-def test_the_choices_are_saved_in_the_workspace_and_come_back(window, qapp):
-    video = _video(window)
-    window.set_view_setting(video, "overlay.corner", "bottom-right")
-    window.set_view_setting(video, "overlay.show.Contact", False)
-    window.save_workspace_as("Mine")
-    again = _reopen(window, qapp, workspace_name="Mine")
-    try:
-        badges = _video(again).badges
-        assert badges.corner == "bottom-right" and badges.hidden == {"Contact"}
-    finally:
-        again.close()
-
-
-def test_switching_workspaces_switches_the_badge_settings_and_reset_restores_the_projects(window):
-    video = _video(window)
-    window.save_workspace_as("Defaults")
-    window.set_view_setting(video, "overlay.corner", "off")
-    window.save_workspace_as("Off")
-    window.switch_workspace("Defaults")
-    assert video.badges.corner == "top-right"
-    window.switch_workspace("Off")
-    assert video.badges.corner == "off"
-    window.reset_workspace()
-    assert video.badges.corner == "top-right"
-
-
-def test_the_choices_are_kept_when_another_collection_is_opened(tmp_path, qapp):
-    # one collection here, so the same views are rebuilt: the choice must survive a rebuild of the view
-    _write_video(tmp_path / "clip.mkv")
-    _write_nwb(tmp_path / "session.nwb")
-    (tmp_path / "project.yaml").write_text(f"""
-name: o
-sources:
-  session: {{type: nwb, path: session.nwb}}
-  video: {{type: video, path: clip.mkv, fps: {FPS}}}
-segmentations:
-  trials: {{label: Trial, from: "session:intervals/trials"}}
-views:
-  - type: video
-    title: Clip
-    source: video
-    overlay:
-      rows: [{{name: Lick, kind: events, from: "session:processing/behavior/licks", member: left}}]
-""", encoding="utf-8")
-    window = build_window(tmp_path / "project.yaml", use_workspace=False)
-    try:
-        video = _video(window)
-        window.set_view_setting(video, "overlay.corner", "top-left")
-        window.remove_view(video, track=False)
-        again = window.add_view({"type": "video", "title": "Clip", "source": "video",
-                                 "overlay": {"rows": [{"name": "Lick", "kind": "events",
-                                                       "from": "session:processing/behavior/licks", "member": "left"}]}})
-        assert again.badges.corner == "top-left"
-    finally:
-        window.close()
 
 
 # -- tracked lines and contact markers ---------------------------------------------------------------------------------
@@ -481,7 +243,7 @@ def test_each_tracked_thing_can_be_switched_off_and_the_projects_choice_comes_ba
 # -- groups and the master switch ---------------------------------------------------------------------------------------
 @pytest.fixture
 def grouped_window(tmp_path, qapp):
-    """Badges and drawings, some grouped (a group can mix badges and drawings), one ungrouped."""
+    """Drawings, some grouped, one ungrouped."""
     from pynwb.behavior import BehavioralTimeSeries
 
     _write_video(tmp_path / "clip.mkv")
@@ -489,7 +251,7 @@ def grouped_window(tmp_path, qapp):
     nwb.add_trial(start_time=0.0, stop_time=11.0)
     behavior = nwb.create_processing_module("behavior", "b")
     t = np.arange(0, 11.0, 1 / FPS)
-    for w in ("A", "B"):
+    for w in ("A", "B", "C"):
         pos = BehavioralTimeSeries(name=f"pos_{w}")
         for name, base in (("base_x", 60.0), ("base_y", 40.0), ("tip_x", 10.0), ("tip_y", 20.0)):
             pos.create_timeseries(name=name, data=base + t, unit="px", timestamps=t)
@@ -499,7 +261,7 @@ def grouped_window(tmp_path, qapp):
     behavior.add(licks)
     with NWBHDF5IO(str(tmp_path / "session.nwb"), "w") as io:
         io.write(nwb)
-    lines = "\n".join(f'        - {{name: Whisker {w}, group: Whiskers, from: "session:processing/behavior/pos_{w}", base: [base_x, base_y], tip: [tip_x, tip_y]}}' for w in "AB")
+    lines = "\n".join(f'        - {{name: Whisker {w}, {"group: Whiskers, " if w != "C" else ""}from: "session:processing/behavior/pos_{w}", base: [base_x, base_y], tip: [tip_x, tip_y]}}' for w in "ABC")
     (tmp_path / "project.yaml").write_text(f"""
 name: grouped
 sources:
@@ -507,13 +269,13 @@ sources:
   video: {{type: video, path: clip.mkv, fps: {FPS}}}
 segmentations:
   trials: {{label: Trial, from: "session:intervals/trials"}}
+glossary:
+  Whiskers: "The tracked whiskers."
 views:
   - type: video
     title: Clip
     source: video
     overlay:
-      rows:
-        - {{name: Lick, group: Events, kind: events, from: "session:processing/behavior/licks", member: left}}
       lines:
 {lines}
 """, encoding="utf-8")
@@ -535,14 +297,16 @@ def _select_clip(window):
 
 def test_settings_carry_their_group(grouped_window):
     groups = {s.label: s.group for s in next(v for v in grouped_window.views).settings() if s.kind == "toggle"}
-    assert groups == {"Show overlays": None, "Hide overlays on blank frames": None, "Lick": "Events", "Draw Whisker A": "Whiskers", "Draw Whisker B": "Whiskers"}
+    assert groups == {"Show overlays": None, "Draw Whisker A": "Whiskers", "Draw Whisker B": "Whiskers", "Draw Whisker C": None,
+                      "Hide overlays on blank frames": None}
 
 
 def test_a_group_has_one_switch_above_its_members_and_it_reflects_them(grouped_window):
     panel = _select_clip(grouped_window)
     checks = _checks(panel)
-    assert {"Whiskers", "Events", "Show overlays", "Draw Whisker A", "Draw Whisker B", "Lick"} <= set(checks)
+    assert {"Whiskers", "Show overlays", "Draw Whisker A", "Draw Whisker B", "Draw Whisker C"} <= set(checks)
     group = checks["Whiskers"]
+    assert group.toolTip() == "The tracked whiskers."                          # explained by the project's glossary
     assert group.checkState() == Qt.CheckState.Checked
     checks["Draw Whisker A"].setChecked(False)
     assert group.checkState() == Qt.CheckState.PartiallyChecked
@@ -558,8 +322,8 @@ def test_the_group_switch_turns_all_its_members_off_and_on_and_the_others_are_un
     video = _video(grouped_window)
     group = _checks(panel)["Whiskers"]
     group.click()                                                      # all on: so off
-    assert video.lines.hidden == {"Whisker A", "Whisker B"} and video.badges.hidden == set()
-    assert all(not _checks(panel)[n].isChecked() for n in ("Draw Whisker A", "Draw Whisker B")) and _checks(panel)["Lick"].isChecked()
+    assert video.lines.hidden == {"Whisker A", "Whisker B"}                        # the ungrouped one is left alone
+    assert all(not _checks(panel)[n].isChecked() for n in ("Draw Whisker A", "Draw Whisker B")) and _checks(panel)["Draw Whisker C"].isChecked()
     _checks(panel)["Whiskers"].click()
     assert video.lines.hidden == set()
     _checks(panel)["Draw Whisker A"].setChecked(False)                 # mixed: a click turns everything on
@@ -581,7 +345,7 @@ def test_with_the_master_switch_off_nothing_is_painted_over_the_picture(grouped_
     video = _video(grouped_window)
     video.resize(480, 360)
     video._wanted = 30
-    video._on_frame(30, np.full((48, 64), 120, dtype=np.uint8))       # a frame, with a lick on it and tracked lines
+    video._on_frame(30, np.full((48, 64), 120, dtype=np.uint8))       # a frame, with tracked lines on it
     on = video.widget.grab().toImage()
     video.apply_setting("overlay.enabled", False)
     off = video.widget.grab().toImage()
@@ -594,7 +358,7 @@ def test_the_group_switch_is_not_saved_but_its_members_and_the_master_switch_are
     panel = _select_clip(grouped_window)
     checks = _checks(panel)
     assert checks["Whiskers"].property("workspace").startswith("not saved")
-    assert all(checks[n].property("workspace") == "saved" for n in ("Show overlays", "Lick", "Draw Whisker A"))
+    assert all(checks[n].property("workspace") == "saved" for n in ("Show overlays", "Draw Whisker C", "Draw Whisker A"))
 
 
 def test_group_choices_are_saved_with_the_workspace_and_reset_with_it(grouped_window, qapp):
@@ -609,8 +373,8 @@ def test_group_choices_are_saved_with_the_workspace_and_reset_with_it(grouped_wi
     assert _video(window).lines.hidden == {"Whisker A", "Whisker B"} and not _video(window).widget.layers_visible
 
 
-def test_nothing_is_drawn_on_a_blank_frame_and_the_overlays_come_back_with_the_picture(window, qapp):
-    video = _video(window)
+def test_nothing_is_drawn_on_a_blank_frame_and_the_overlays_come_back_with_the_picture(grouped_window, qapp):
+    video = _video(grouped_window)
     video.resize(480, 360)
     video.show()
     painted = []
@@ -636,8 +400,8 @@ def test_nothing_is_drawn_on_a_blank_frame_and_the_overlays_come_back_with_the_p
     assert not video.widget.blank
 
 
-def test_the_blank_level_and_whether_to_hide_come_from_the_project_and_the_viewer_can_change_them(window, qapp):
-    video = _video(window)
+def test_the_blank_level_and_whether_to_hide_come_from_the_project_and_the_viewer_can_change_them(grouped_window, qapp):
+    video = _video(grouped_window)
     assert video.blank_level == 2.0 and video.widget.hide_blank               # cautious defaults: only an essentially black frame
     video.resize(480, 360)
     video.show()
@@ -659,8 +423,56 @@ def test_the_blank_level_and_whether_to_hide_come_from_the_project_and_the_viewe
     video.widget.layers.append(Spy())
     video.widget.grab()
     assert not painted
-    window.set_view_setting(video, "overlay.hide_blank", False)              # the viewer wants them anyway
+    grouped_window.set_view_setting(video, "overlay.hide_blank", False)              # the viewer wants them anyway
     video.widget.grab()
-    assert painted and window.settings()["view_settings"]["Clip"]["overlay.hide_blank"] is False
+    assert painted and grouped_window.settings()["view_settings"]["Clip"]["overlay.hide_blank"] is False
     video.reset_settings()
     assert video.widget.hide_blank
+
+
+def test_switching_workspaces_switches_the_overlay_settings_and_reset_restores_the_projects(grouped_window):
+    window = grouped_window
+    video = _video(window)
+    window.save_workspace_as("Defaults")
+    window.set_view_setting(video, "overlay.track.Whisker A", False)
+    window.save_workspace_as("Off")
+    window.switch_workspace("Defaults")
+    assert video.lines.hidden == set()
+    window.switch_workspace("Off")
+    assert video.lines.hidden == {"Whisker A"}
+    window.reset_workspace()
+    assert video.lines.hidden == set()
+
+
+def test_the_choices_survive_the_view_being_rebuilt(grouped_window):
+    window = grouped_window
+    video = _video(window)
+    window.set_view_setting(video, "overlay.track.Whisker A", False)
+    spec = dict(window.project.view_specs[0])
+    window.remove_view(video, track=False)
+    again = window.add_view(spec, track=False)
+    assert again.lines.hidden == {"Whisker A"}
+
+
+def test_event_badges_are_gone_and_a_project_that_still_asks_for_them_is_told_to_use_the_tracker(tmp_path, qapp):
+    _write_video(tmp_path / "clip.mkv")
+    _write_nwb(tmp_path / "session.nwb")
+    (tmp_path / "project.yaml").write_text(f"""
+name: old
+sources:
+  session: {{type: nwb, path: session.nwb}}
+  video: {{type: video, path: clip.mkv, fps: {FPS}}}
+views:
+  - type: video
+    title: Clip
+    source: video
+    overlay:
+      corner: top-right
+      rows: [{{name: Lick, kind: events, from: "session:processing/behavior/licks", member: left}}]
+""", encoding="utf-8")
+    window = build_window(tmp_path / "project.yaml", use_workspace=False)
+    try:
+        assert any("event tracker" in note for note in window.context.notes)
+        assert [type(layer).__name__ for layer in _video(window).widget.layers] == []
+    finally:
+        window.close()

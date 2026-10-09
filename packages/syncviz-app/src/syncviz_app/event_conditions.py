@@ -22,11 +22,14 @@ from syncviz_app.project import split_ref
 
 
 class EventConditions:
-    def __init__(self, context, groups: dict[str, dict[str, dict]] | None = None, defaults: dict | None = None) -> None:
+    def __init__(self, context, groups: dict[str, dict[str, dict]] | None = None, defaults: dict | None = None,
+                 track: list[str] | None = None) -> None:
         self.context = context
         self.groups = groups or {}                          # scope -> event name -> {from, member?}
         self.defaults = dict(defaults or {})                # the project's `clip:` (before_ms, after_ms, anchor)
         self.clip_overrides: dict[str, dict] = {}           # per event, set by the user
+        self.track_default = [n for n in (track or []) if n in self.names()]   # the project's own list of events to track
+        self.tracked: list[str] = list(self.track_default)  # the events the tracker shows, chosen by the viewer
         self.base = None              # set by the window: () -> (intervals, label, plural, number attribute, confine) of the segmentation in use
         self.filters_reloaded = None  # set by the window: (criteria) -> bring the attribute filters up to date after the segments changed
         self._epochs: tuple | None = None                   # (signature, clips) kept so the same clips are not made twice
@@ -53,6 +56,45 @@ class EventConditions:
     def find(self, name: str):
         """The data behind an event name in the open recording."""
         return self.find_in(self.context.resources, name)
+
+    def target_of(self, name: str) -> Target:
+        """The target an event name stands for (what a tile points at), whatever the open recording holds."""
+        spec = self.spec_of(name)
+        source, path = split_ref(spec["from"])
+        try:
+            kind = self.context.resources.kind_of(spec["from"]) or "events"
+        except Exception:                                   # the source is not in this recording
+            kind = "events"
+        return Target(source, path, kind, spec.get("member"), name)
+
+    # -- the events the tracker shows ----------------------------------------------------------------
+    def is_tracked(self, name: str) -> bool:
+        return name in self.tracked
+
+    def track(self, *names: str) -> None:
+        added = [n for n in names if n in self.names() and n not in self.tracked]
+        if added:
+            self.tracked += added
+            self._notify()
+
+    def untrack(self, *names: str) -> None:
+        kept = [n for n in self.tracked if n not in names]
+        if len(kept) != len(self.tracked):
+            self.tracked = kept
+            self._notify()
+
+    def toggle_tracking(self, name: str) -> None:
+        (self.untrack if self.is_tracked(name) else self.track)(name)
+
+    def filter_state(self, name: str) -> tuple[str, bool] | None:
+        """How the conditions use an event, for its tile: ("yes" | "no" | "clips", whether that condition is on), or None if no
+        condition mentions it. A condition that is on wins over one that is off, and clips over the rest."""
+        found = [c for c in self.items if name in c.events]
+        if not found:
+            return None
+        on = [c for c in found if c.enabled] or found
+        pick = next((c for c in on if c.mode == "clip"), on[0])
+        return ("clips" if pick.mode == "clip" else "yes" if pick.answer else "no"), pick.enabled
 
     # -- the window cut around an event ----------------------------------------------------------
     def clip(self, name: str) -> dict:
@@ -230,10 +272,13 @@ class EventConditions:
 
     # -- what a workspace saves --------------------------------------------------------------
     def state(self) -> dict:
-        return {"conditions": [c.to_dict() for c in self.items], "clips": {k: dict(v) for k, v in self.clip_overrides.items()}}
+        return {"conditions": [c.to_dict() for c in self.items], "clips": {k: dict(v) for k, v in self.clip_overrides.items()},
+                "tracked": list(self.tracked)}
 
     def apply_state(self, state: dict) -> None:
         self.clip_overrides = {str(k): dict(v) for k, v in state.get("clips", {}).items() if k in self.names()}
+        self.tracked = ([str(n) for n in state["tracked"] if n in self.names()] if "tracked" in state
+                        else list(self.track_default))
         items = []
         for data in state.get("conditions", []):
             try:

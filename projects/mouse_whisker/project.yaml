@@ -110,22 +110,12 @@ views:
     title: Whisker video
     source: video
     area: left
-    # Event badges over the picture, in a corner (top-right, top-left, bottom-left, bottom-right, or off). Each badge lights
-    # when its event happens at the frame on screen and fades. The viewer can change the corner and hide events from the
-    # Views list; this is what it starts with.
     overlay:
       # The sync blackouts in this dataset are not quite black, so a frame this dark (of 255) on average has no picture and the
       # overlays are not drawn on it. Without this the default (2) only catches frames that are essentially black.
       blank_level: 8
-      corner: top-right
       decay: 0.25
-      rows:
-        - {name: Lick left,  group: Licks and rewards, kind: events,    from: "session:processing/behavior/licks",   member: left}
-        - {name: Lick right, group: Licks and rewards, kind: events,    from: "session:processing/behavior/licks",   member: right}
-        - {name: Reward left, group: Licks and rewards, kind: events,   from: "session:processing/behavior/rewards", member: left}
-        - {name: Contact C0, group: Contacts, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C0"}
-        - {name: Contact C1, group: Contacts, kind: intervals, from: "session:processing/behavior/contacts_by_whisker_C1"}
-      # `group:` on any item puts it under one switch in the Views list (a group can mix badges and drawings).
+      # `group:` on any item puts it under one switch in the Views list.
       # Drawn on the picture itself, in picture pixels. The tracked whiskers are lines from base to tip (the file stores them
       # with a unit conversion, which is undone to get pixels); a ring marks the tip while a contact lasts.
       # The eight tracked markers along each whisker (tip to base), drawn as a curve, as dots, or both; `skeleton_style` is the start.
@@ -140,6 +130,11 @@ views:
         - {name: Contact point C1, group: Contacts, from: "session:processing/behavior/contacts_by_whisker_C1", x: tip_x, y: tip_y, color_of: Whisker C1}
         - {name: Contact point C2, group: Contacts, from: "session:processing/behavior/contacts_by_whisker_C2", x: tip_x, y: tip_y, color_of: Whisker C2}
         - {name: Contact point C3, group: Contacts, from: "session:processing/behavior/contacts_by_whisker_C3", x: tip_x, y: tip_y, color_of: Whisker C3}
+  # The events being tracked light up when they happen. Empty to begin with: the viewer tracks what they care about (double-click
+  # an event, or choose Track from its menu); `track:` above would start it with some.
+  - type: events
+    title: Event tracker
+    area: right
   - type: timeseries
     title: Whisker C0 angle
     series: {from: "session:processing/behavior/processed_position_whisker_C0", member: angle}

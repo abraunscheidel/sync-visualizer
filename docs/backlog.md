@@ -6,10 +6,7 @@ planned unless said otherwise.
 
 ## In progress
 
-- **Event tracker view** (28.11). A view whose tiles light when the events the user tracks happen, grouped by scope, with a collapsible
-  "Other events" section of grayed tiles; double-click tracks or untracks; tiles show the filter state of their event; the list of
-  tracked events is shared state kept in the workspace, empty unless the project names a `track:` list. Then remove the video's
-  corner badges, which it replaces.
+- Nothing. The next item below is first.
 
 ## Next, in order
 
@@ -57,6 +54,8 @@ The aim: someone with a new experiment can get their data in with little work, s
 
 ## Done recently
 
+- The event tracker view; the video's corner badges removed (28.11, end of 28.15's neighbour notes).
+- docs/backlog.md itself.
 - Multi-selection: Ctrl and Shift click, commands on several events, the Details table (28.11).
 - Clips are part of the event filter; chips switch on and off; no windows dropdown (28.12).
 - Clicks on a filtered-out region snap to the closest included point (28.12 end).

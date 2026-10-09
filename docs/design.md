@@ -2574,3 +2574,14 @@ test it. In order of how much work they should need:
 
 The profile layer (28.9) is where items 2 and 3 live, so it is also the plugin-authoring layer; that is a reason to treat it as more than a
 tidy-up.
+
+**The event tracker (built, from 28.11).** A view of type `events` (`views/event_tracker.py`, shown as "Event tracker" in the Add view dialog). The
+events it shows are shared state, `EventConditions.tracked`, kept in the workspace and empty unless the project has a `track: [names]` list,
+so there can be several trackers and each has a display delay like any view. Tiles are grouped by the scope the project gives the events
+and light when the event happens at the playhead (an instant fades over `decay`, an interval stays lit while it lasts). Below them is a
+collapsed "Other events (N)" list of grayed tiles that do not light; they can be selected and filtered by like the rest, and the list opens
+from its heading or the "Show the other events" setting (kept in the workspace). A tile shows how its event is used as a filter: yes, no
+or clips, faded if that condition is off. Click selects, Ctrl and Shift extend; a double click runs the first command of
+`[seek, toggle_tracking]` that applies, so on a tile it tracks or untracks the event. Right-click offers Track this event / Remove from
+tracker (and Track these events for several) beside the filter and clip commands. A binding in `interaction:` may be a list. The video's
+corner badges are gone (their `overlay: rows:` and `corner:` give a note pointing at the tracker); the video keeps its drawn tracking.

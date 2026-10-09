@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QMenu
 from syncviz.core import Seek
 from syncviz.inspection import Target
 
-DEFAULT_BINDINGS = {"click": "select", "double_click": "seek"}
+DEFAULT_BINDINGS = {"click": "select", "double_click": ["seek", "toggle_tracking"]}
 
 
 @dataclass
@@ -34,6 +34,7 @@ class Command:
     shortcut: str = ""                                            # shown in the menu; bound to the selection by the window
     children: Callable[[Target, object], list["Command"]] | None = None   # makes this a submenu: (target, the view it was pointed at in)
     description: str = ""
+    in_menu: bool = True                                                # False: only for a gesture or a shortcut to run
     run_many: Callable[[list[Target], object], None] | None = None      # the same thing for several selected items at once
     applies_many: Callable[[list[Target]], bool] = lambda targets: True
 
@@ -43,7 +44,7 @@ class CommandRegistry:
 
     def __init__(self, context, bindings: dict | None = None, keys: dict | None = None) -> None:
         self.context = context
-        self.bindings = {**DEFAULT_BINDINGS, **{str(k): str(v) for k, v in (bindings or {}).items()}}
+        self.bindings = {**DEFAULT_BINDINGS, **{str(k): v if isinstance(v, list) else str(v) for k, v in (bindings or {}).items()}}
         self._actions: dict[str, Command] = {}
         self._providers: list[Callable[[], list[Command]]] = []
         self._install_builtins(keys or {})
@@ -71,7 +72,7 @@ class CommandRegistry:
         anything in it)."""
         out = []
         for action in self.all():
-            if not action.applies(target):
+            if not action.in_menu or not action.applies(target):
                 continue
             if action.children is not None and not action.children(target, origin):
                 continue
@@ -99,8 +100,11 @@ class CommandRegistry:
 
     def trigger(self, gesture: str, target: Target | None, origin=None) -> bool:
         """Run the action the project binds to a gesture ("click", "double_click")."""
-        action_id = self.bindings.get(gesture)
-        return bool(action_id) and self.run(action_id, target, origin)
+        bound = self.bindings.get(gesture)
+        for action_id in ([] if not bound else bound if isinstance(bound, list) else [bound]):
+            if self.run(action_id, target, origin):             # a list: the first command that applies is the one that runs
+                return True
+        return False
 
     # -- the actions every application has -----------------------------------------------
     def _install_builtins(self, keys: dict) -> None:
