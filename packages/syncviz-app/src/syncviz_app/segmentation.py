@@ -17,8 +17,6 @@ that turn "what happens inside" each one into attributes you can filter by (desi
           after_ms: 500
           anchor: span                              # for an event that lasts: span (the default), start or end
           within: trials                            # windows are clipped to a trial and take its attributes
-          # or, for windows the user made from named events, each with its own window:
-          # sources: [{event: "Contact C0", before_ms: 250, after_ms: 1000, anchor: span}, ...]
         filters: [stimulus, outcome]
 """
 
@@ -31,18 +29,17 @@ from syncviz.resources import EventSeries, IntervalSeries
 from syncviz.sources import MissingDataError
 
 
-def segments(specs: dict[str, dict], name: str, resources, notes: list[str] | None = None, events=None) -> IntervalSeries:
-    """The segments called `name` in `specs`, for the recording in `resources`. Kept, so every caller shares one.
-    `events` finds the data behind the event names a derived segmentation may use (`EventConditions.find_in`)."""
-    return resources.cached(("segments", name), lambda: _build(specs, name, resources, notes, (), events))
+def segments(specs: dict[str, dict], name: str, resources, notes: list[str] | None = None) -> IntervalSeries:
+    """The segments called `name` in `specs`, for the recording in `resources`. Kept, so every caller shares one."""
+    return resources.cached(("segments", name), lambda: _build(specs, name, resources, notes, ()))
 
 
-def _build(specs, name, resources, notes, building, events=None) -> IntervalSeries:
+def _build(specs, name, resources, notes, building) -> IntervalSeries:
     if name in building:
         raise ValueError(f"segmentations {' -> '.join(building + (name,))} refer to each other in a circle")
     spec = specs[name]
     if "derive" in spec:
-        base = _derive(specs, name, spec["derive"], resources, notes, building + (name,), events)
+        base = _derive(specs, name, spec["derive"], resources, notes, building + (name,))
     else:
         base = resources.intervals(spec["from"])
     for attribute, how in (spec.get("measures") or {}).items():
@@ -74,23 +71,13 @@ def _source_of(data, how: dict, default_anchor: str, before: float, after: float
     return EpochSource(data.starts, data.stops, before, after, anchor)
 
 
-def _derive(specs, name, how, resources, notes, building, events=None) -> IntervalSeries:
-    sources = []
-    if "sources" in how:                                      # windows around named events, each with its own window
-        if events is None:
-            raise ValueError(f"{name}: windows around named events need the project's events")
-        for item in how["sources"]:
-            data = events.find_in(resources, item["event"])
-            sources.append(_source_of(data, item, "span", float(item.get("before_ms", 0)) / 1000.0,
-                                      float(item.get("after_ms", 0)) / 1000.0))
-    else:
-        data = resources.events_or_intervals(how["from"], how.get("member"))
-        sources.append(_source_of(data, how, "span", float(how.get("before_ms", 0)) / 1000.0,
-                                  float(how.get("after_ms", 0)) / 1000.0))
+def _derive(specs, name, how, resources, notes, building) -> IntervalSeries:
+    data = resources.events_or_intervals(how["from"], how.get("member"))
+    source = _source_of(data, how, "span", float(how.get("before_ms", 0)) / 1000.0, float(how.get("after_ms", 0)) / 1000.0)
     parent_name = how.get("within")
-    parent = _build(specs, parent_name, resources, notes, building, events) if parent_name else None
+    parent = _build(specs, parent_name, resources, notes, building) if parent_name else None
     label = specs[parent_name].get("label", parent_name) if parent_name else "Segment"
-    epochs = epochs_from_sources(sources, parent, bool(how.get("merge", True)), how.get("count_name", "Events"), label, name)
+    epochs = epochs_from_sources([source], parent, bool(how.get("merge", True)), how.get("count_name", "Events"), label, name)
     if len(epochs) == 0:
         raise MissingDataError(f"no {specs[name].get('label', name).lower()} windows: the events never fall in the segments")
     return epochs

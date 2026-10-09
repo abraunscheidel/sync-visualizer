@@ -50,28 +50,6 @@ segmentations:
     from: session:intervals/trials
     number_attribute: trial      # shown as the segment's number
     filters: [stimulus, outcome, choice, servo_position]
-  # Windows cut around events: 500 ms either side of the whole of every touch, inside the trial it falls in. They take the
-  # trial's attributes, and movement stays inside them. Choose between these and trials in the toolbar.
-  touches_c0:
-    label: "C0 touch"
-    label_plural: "C0 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C0", before_ms: 500, after_ms: 500, within: trials}
-    filters: [stimulus, outcome, choice, servo_position]
-  touches_c1:
-    label: "C1 touch"
-    label_plural: "C1 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C1", before_ms: 500, after_ms: 500, within: trials}
-    filters: [stimulus, outcome, choice, servo_position]
-  touches_c2:
-    label: "C2 touch"
-    label_plural: "C2 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C2", before_ms: 500, after_ms: 500, within: trials}
-    filters: [stimulus, outcome, choice, servo_position]
-  touches_c3:
-    label: "C3 touch"
-    label_plural: "C3 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C3", before_ms: 500, after_ms: 500, within: trials}
-    filters: [stimulus, outcome, choice, servo_position]
 
 # Notes on how to read a field, shown as tooltips next to the description the data file itself gives. Keys are the names
 # the interface shows. See docs/datasets/dandi-000231.md for the longer guide.

@@ -288,16 +288,6 @@ class FilterBar(QToolBar):
         self.segmentation.activated.connect(self._segmentation_chosen)
         self._segmentation_action = self.insertWidget(self._anchor, self.segmentation)
 
-    def add_segmentation(self, name: str, info: dict) -> None:
-        """Offer another segmentation (windows the user made from events) in the choice."""
-        self.segmentations[name] = info
-        self._filters_of[name] = list(info.get("filters", []))
-        if self.segmentation is None:
-            self._make_segmentation_choice()
-            self.segmentation.setCurrentIndex(max(self.segmentation.findData(self.active), 0))
-        elif self.segmentation.findData(name) < 0:
-            self.segmentation.addItem(info.get("plural") or f"{info.get('label', name)}s", name)
-
     def _install_filters(self, attributes: list[str]) -> None:
         """One dropdown for each attribute of the current segments, placed before the match count."""
         context, nav = self.context, self.context.navigator
@@ -376,6 +366,32 @@ class FilterBar(QToolBar):
             box.blockSignals(True)
             box.setCurrentIndex(index)
             box.blockSignals(False)
+        self._filters_changed(0)
+
+    def segments_replaced(self, criteria: dict) -> None:
+        """The navigated segments were swapped for others of the same recording (clips around events, or back): refill the options
+        and keep the choices in `criteria` where the new segments still allow them."""
+        nav = self.context.navigator
+        for attribute, box in self._filters.items():
+            box.blockSignals(True)
+            box.clear()
+            box.addItem(ALL, None)
+            present = attribute in nav.intervals.attributes
+            for value in (nav.intervals.unique(attribute) if present else []):
+                box.addItem(str(value), value)
+            box.setEnabled(present)
+            box.blockSignals(False)
+        self._refresh_options()
+        for attribute, wanted in criteria.items():
+            box = self._filters.get(attribute)
+            if box is None:
+                continue
+            index = next((i for i in range(box.count()) if box.itemData(i) == wanted), 0)
+            if index and box.model().item(index).isEnabled():
+                box.blockSignals(True)
+                box.setCurrentIndex(index)
+                box.blockSignals(False)
+        self.skip.setText(f"Skip non-matching {nav.plural.lower()}")
         self._filters_changed(0)
 
     def refresh(self) -> None:

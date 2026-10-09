@@ -1,8 +1,9 @@
 """The Events panel: the event conditions in force, as chips (design doc 28.10).
 
-A chip is one active condition: a list of events of which any one counts, and yes or no. Click a chip to change it, its x to
-remove it. Chips combine with each other and with the segment filters (all must hold). A core panel, not a view: it holds
-shared state and there is only one of it.
+A chip is one condition: a list of events of which any one counts, and yes or no. Its box switches it on or off without losing it,
+its button chooses whether it keeps the segments where the events happened or just the clips around them, its label opens it for
+changing, and its x removes it. Chips that are on combine with each other and with the segment filters (all must hold). A core
+panel, not a view: it holds shared state and there is only one of it.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from syncviz.conditions import Condition
-from syncviz_app.controls import not_saved
+from syncviz_app.controls import not_saved, saved_in_workspace
 
 EMPTY_TEXT = "No event conditions. Add one to keep only the segments where something did, or did not, happen."
 
@@ -55,6 +56,17 @@ class ConditionDialog(QDialog):
         row.addWidget(self.yes)
         row.addWidget(self.no)
         layout.addLayout(row)
+        use = QHBoxLayout()
+        self.segments_mode = not_saved(QRadioButton("keep the segments where it happened"), "a dialog's own choice")
+        self.clips_mode = not_saved(QRadioButton("keep just the clips around it"), "a dialog's own choice")
+        self.clips_mode.setToolTip("Move between only the moments around each occurrence, using the event's clip window. "
+                                   "Only for events that happened.")
+        (self.clips_mode if condition and condition.mode == "clip" else self.segments_mode).setChecked(True)
+        self.no.toggled.connect(lambda no: self.clips_mode.setEnabled(not no))
+        self.clips_mode.setEnabled(self.yes.isChecked())
+        use.addWidget(self.segments_mode)
+        use.addWidget(self.clips_mode)
+        layout.addLayout(use)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -82,7 +94,8 @@ class ConditionDialog(QDialog):
         events = self.chosen()
         if not events:
             return None
-        return Condition(tuple(events), self.yes.isChecked(), self._edge)
+        clips = self.clips_mode.isChecked() and self.yes.isChecked()
+        return Condition(tuple(events), self.yes.isChecked(), self._edge, True, "clip" if clips else "segment")
 
 
 class ClipDialog(QDialog):
@@ -168,16 +181,28 @@ class EventsPanel(QWidget):
         frame.setProperty("chip", True)
         row = QHBoxLayout(frame)
         row.setContentsMargins(6, 2, 2, 2)
+        on = saved_in_workspace(QCheckBox())
+        on.setChecked(condition.enabled)
+        on.setToolTip("Apply this condition (untick to keep it without applying it)")
+        on.toggled.connect(lambda checked, i=index: self.conditions.set_enabled(i, checked))
         label = QPushButton(condition.label())
         label.setFlat(True)
-        label.setStyleSheet("text-align: left;")
+        label.setStyleSheet("text-align: left;" + ("" if condition.enabled else " color: gray;"))
         label.setToolTip("Click to change this condition")
         label.clicked.connect(lambda _=False, i=index: self.edit(i))
+        mode = QPushButton("Clips" if condition.mode == "clip" else self.conditions.base_plural())
+        mode.setEnabled(condition.answer)
+        mode.setToolTip("What this condition keeps: the whole segments where the events happened, or just the clips around them "
+                        "(click to switch). Clips are only for events that happened.")
+        mode.clicked.connect(lambda _=False, i=index, c=condition:
+                             self.conditions.set_mode(i, "segment" if c.mode == "clip" else "clip"))
         remove = QPushButton("×")
         remove.setFixedWidth(26)
         remove.setToolTip("Remove this condition")
         remove.clicked.connect(lambda _=False, i=index: self.conditions.remove(i))
+        row.addWidget(on)
         row.addWidget(label, 1)
+        row.addWidget(mode)
         row.addWidget(remove)
         return frame
 

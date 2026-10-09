@@ -2494,3 +2494,25 @@ ignore a hidden region (which left narrow matches hard to hit): the playhead goe
 `interaction: {snap: nearest|before|after}` says (default nearest; the end of the segment before, or the start of the next; if there is
 nothing on the chosen side, the other side). The cursor over the bar is always the pointing hand. Stepping and playback still use `resolve`,
 which jumps in the direction of travel.
+
+### 28.12 Clips are part of the event filter (replaces the windows dropdown)
+
+Decided in discussion; built. Event tiles and chips are the source of all filtering, so moments around an event are not a separate
+segmentation chosen from a dropdown. A condition (chip) has:
+
+* **an on/off box**: switched off it stays in the list and is not applied, so filters can be compared without recreating them;
+* **a mode**: *segments* (keep the segments, the trials, where the events happened or did not) or *clips* (keep just the moments around
+  each occurrence). Clips need an event that happened, so the mode is off for "did not happen".
+
+When any condition that is on is in clip mode, the navigated segments become clips: a window around every occurrence of those events,
+each event with its own clip (before, after, anchor; 28.11), clipped to the segment it starts in, taking that segment's attributes
+(stimulus, outcome), and merged where they overlap so nothing requested is left out. Movement is confined to the clips. With none,
+the navigated segments are the project's own again. The other conditions (segment mode) are then asked of whatever the segments are, so
+"Lick left: yes" with a clip on a contact means the clips of that contact that contain a left lick. The attribute filters (stimulus and so
+on) carry over, dropped to All only where the new segments cannot have the chosen value. Conditions follow the open recording and the
+segmentation in use; a clip event this recording lacks is skipped with a note.
+
+Commands on a named event: **Only segments with this event** (a chip in segment mode), **Clip around this event** (a chip in clip mode)
+and **Clip window…**. The segmentation dropdown now exists only when a project declares more than one segmentation of its own; windows
+around events are no longer declared that way in the whisker project, and "windows the user made" and the `sources:` form of a derived
+segmentation were removed.

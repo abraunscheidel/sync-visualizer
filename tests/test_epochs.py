@@ -312,45 +312,14 @@ def test_a_derived_segmentation_cuts_around_the_whole_contact_unless_told_otherw
     assert segments(specs, "onset", window.context.resources).stops.tolist() == [3.5]
 
 
-def test_making_windows_around_events_uses_each_events_own_clip_and_adds_a_segmentation_to_choose(window):
-    events = window.context.events
-    events.set_clip("Lick left", 100, 100, "span")
-    events.set_clip("Contact C0", 500, 500, "span")
-    assert window.windows_around(["Lick left", "Contact C0"])
-    nav = window.context.navigator
-    assert window.active_segmentation == "around: Lick left + Contact C0"
-    assert nav.label == "window" and nav.count == 3                          # two short lick windows, then the longer contact one
-    assert "around: Lick left + Contact C0" in [window.filter_bar.segmentation.itemData(i)
-                                                for i in range(window.filter_bar.segmentation.count())]
-
-
-def test_windows_around_one_event_are_named_after_it_and_use_its_clip(window):
-    window.context.events.set_clip("Contact C0", 250, 250, "span")
-    assert window.windows_around(["Contact C0"])
-    assert window.context.navigator.label == "Contact C0 window"
-    assert window.context.navigator.bounds == pytest.approx((2.75, 3.75))
-    window.context.events.set_clip("Contact C0", 1000, 1000, "span")             # asking again with a new clip replaces it
-    assert window.windows_around(["Contact C0"])
-    assert window.context.navigator.bounds == pytest.approx((2.0, 4.5))
-
-
-def test_the_windows_a_user_made_come_back_with_the_workspace(window):
-    window.windows_around(["Contact C0"])
-    saved = window.settings()
-    window.set_segmentation("trials")
-    del window.project.config["segmentations"]["around: Contact C0"]
-    window.context.events.user_segmentations.clear()
-    window._apply_settings(saved)
-    assert window.active_segmentation == "around: Contact C0" and window.context.navigator.label == "Contact C0 window"
-
-
 def test_the_commands_are_offered_on_named_events_and_the_clip_dialog_sets_the_clip(window, monkeypatch):
     from syncviz.inspection import Target
     registry = window.context.commands
     contact = Target("session", "processing/behavior/contacts_C0", "intervals", None, "Contact C0")
     other = Target("session", "units", "events", "7", "Unit 7")
-    assert {"Make windows around this event", "Clip window…"} <= {c.label for c in registry.for_target(contact)}
-    assert not {"Make windows around this event", "Clip window…"} & {c.label for c in registry.for_target(other)}
+    assert {"Clip around this event", "Clip window…"} <= {c.label for c in registry.for_target(contact)}
+    assert "Make windows around this event" not in {c.label for c in registry.for_target(contact)}
+    assert not {"Clip around this event", "Clip window…"} & {c.label for c in registry.for_target(other)}
     from syncviz_app import events_panel
 
     class Fake:
@@ -366,7 +335,7 @@ def test_the_commands_are_offered_on_named_events_and_the_clip_dialog_sets_the_c
     monkeypatch.setattr(events_panel, "ClipDialog", Fake)
     registry.run("set_clip", contact)
     assert window.context.events.clip("Contact C0") == {"before_ms": 10.0, "after_ms": 20.0, "anchor": "stop"}
-    assert registry.run("windows_around", contact) and window.context.navigator.label == "Contact C0 window"
+    assert registry.run("clip_around", contact) and window.context.navigator.label == "Contact C0 clip"
 
 
 def test_the_clip_dialog_starts_from_the_current_clip_and_returns_its_values(window):
