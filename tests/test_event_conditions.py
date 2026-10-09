@@ -27,14 +27,6 @@ def test_no_keeps_the_segments_where_none_of_them_happened():
     assert condition_mask(TRIALS, Condition(("lick",), answer=False), FIND).tolist() == [False, True, False]
 
 
-def test_a_window_looks_only_at_part_of_the_segment_from_its_start():
-    first = Condition(("lick",), window_ms=(0, 1500))
-    assert condition_mask(TRIALS, first, FIND).tolist() == [True, False, False]       # the lick at 12.0 is 2 s into trial 3
-    late = Condition(("lick",), window_ms=(1500, 2500))
-    assert condition_mask(TRIALS, late, FIND).tolist() == [True, False, True]       # the 2.0 s lick in trial 1, the 12.0 s one in trial 3
-    assert condition_mask(TRIALS, Condition(("touch",), window_ms=(1000, 1500)), FIND).tolist() == [False, True, False]
-
-
 def test_every_condition_has_to_hold_and_one_that_cannot_be_checked_is_skipped_with_a_note():
     def find(name):
         if name == "gone":
@@ -49,10 +41,11 @@ def test_every_condition_has_to_hold_and_one_that_cannot_be_checked_is_skipped_w
 
 
 def test_a_condition_survives_being_saved():
-    condition = Condition(("lick", "touch"), False, (0.0, 250.0), "start")
+    condition = Condition(("lick", "touch"), False, "start")
     assert Condition.from_dict(condition.to_dict()) == condition
     assert Condition.from_dict({"events": ["x"]}) == Condition(("x",))
-    assert "lick or touch: no" in condition.label() and "0 to 250 ms" in condition.label()
+    assert condition.label() == "lick or touch: no"
+    assert Condition.from_dict({"events": ["x"], "window_ms": [0, 500]}) == Condition(("x",))      # an old saved window is ignored
 
 
 # -- the navigator ----------------------------------------------------------------------------------------------------
@@ -137,11 +130,11 @@ def test_removing_and_changing_conditions(window):
 
 def test_conditions_are_saved_in_the_workspace_and_come_back(window):
     events = window.context.events
-    events.add(Condition(("Lick left",), window_ms=(0, 2000)))
+    events.add(Condition(("Lick left", "Lick right"), answer=True))
     saved = window.settings()["events"]
     events.clear()
     events.apply_state({"conditions": saved["conditions"] + [{"events": ["not an event"]}]})
-    assert len(events.items) == 1 and events.items[0].window_ms == (0.0, 2000.0)      # the unknown event is ignored
+    assert events.items == [Condition(("Lick left", "Lick right"))]      # the unknown event is ignored
     assert window.context.navigator.match_count == 1
 
 
@@ -164,7 +157,7 @@ def test_the_command_on_a_named_event_adds_a_condition_and_is_not_offered_for_ot
     assert window.context.events.items == [Condition(("Lick left",))]
 
 
-def test_the_dialog_collects_events_the_answer_and_the_window(window):
+def test_the_dialog_collects_the_events_and_the_answer(window):
     from PySide6.QtCore import Qt
     from syncviz_app.events_panel import ConditionDialog
     dialog = ConditionDialog(window.context, None)
@@ -173,12 +166,10 @@ def test_the_dialog_collects_events_the_answer_and_the_window(window):
     group.child(0).setCheckState(0, Qt.CheckState.Checked)
     group.child(1).setCheckState(0, Qt.CheckState.Checked)
     dialog.no.setChecked(True)
-    dialog.limit.setChecked(True)
-    dialog.start.setValue(100)
-    dialog.stop.setValue(900)
-    assert dialog.condition() == Condition(("Lick left", "Lick right"), False, (100.0, 900.0))
+    assert dialog.condition() == Condition(("Lick left", "Lick right"), False)
     dialog.search.setText("right")
     assert group.child(0).isHidden() and not group.child(1).isHidden() and dialog.tree.topLevelItem(0).isHidden()
+    assert not hasattr(dialog, "limit")                                      # no window: a condition is about the whole segment
 
 
 def test_editing_a_chip_starts_from_what_it_says(window, monkeypatch):
@@ -207,21 +198,10 @@ def test_the_panel_says_when_the_project_names_no_events(window):
     assert not EventsPanel(window.context).add_button.isEnabled()
 
 
-def test_a_refused_condition_says_how_many_segments_it_matches_and_whether_its_window_is_the_reason(window):
+def test_a_refused_condition_says_how_many_segments_it_matches_on_its_own(window):
     events = window.context.events
-    # the contact (3.0 to 3.5) is in trial 1, but not in the first 500 ms of it: the window, counted from the start, rules it out
-    assert not events.add(Condition(("Contact C0",), window_ms=(-500, 500)))
-    text = window.events_panel.message.text()
-    assert "No segment would be left" in text and "On its own it matches 0 of 2" in text
-    assert "Without its window (-500 to 500 ms from the start of each segment) it would match 1" in text
-    events.clear()
     events.add(Condition(("Lick left",)))
     assert not events.add(Condition(("Lick left",), answer=False))          # contradicts the one before
-    assert "On its own it matches 1 of 2" in window.events_panel.message.text()
-    assert "other conditions and filters rule out the rest" in window.events_panel.message.text()
-
-
-def test_the_dialog_explains_that_the_window_counts_from_the_start_of_the_segment(window):
-    from syncviz_app.events_panel import ConditionDialog
-    dialog = ConditionDialog(window.context, None)
-    assert "START of each segment" in dialog.limit.toolTip() and "not around the event" in dialog.limit.toolTip()
+    text = window.events_panel.message.text()
+    assert "No segment would be left" in text and "On its own it matches 1 of 2" in text
+    assert "other conditions and filters rule out the rest" in text

@@ -115,8 +115,7 @@ class EventConditions:
         return True
 
     def _why(self, items: list[Condition], before: list[Condition]) -> str:
-        """A hint about the condition that was just tried: how many segments it matches on its own, and whether its window is
-        what rules them out."""
+        """A hint about the condition that was just tried: how many segments it matches on its own."""
         nav = self.context.navigator
         tried = next((c for c in items if c not in before), None)
         if tried is None or nav is None:
@@ -124,15 +123,7 @@ class EventConditions:
         total = len(nav.intervals)
         try:
             alone = int(condition_mask(nav.intervals, tried, self.find).sum())
-            hint = f"On its own it matches {alone} of {total}."
-            if tried.window_ms is not None:
-                free = Condition(tried.events, tried.answer, None, tried.edge)
-                anywhere = int(condition_mask(nav.intervals, free, self.find).sum())
-                hint += (f" Without its window ({tried.window_ms[0]:g} to {tried.window_ms[1]:g} ms from the start of each "
-                         f"segment) it would match {anywhere}.")
-            else:
-                hint += " The other conditions and filters rule out the rest."
-            return hint
+            return f"On its own it matches {alone} of {total}; the other conditions and filters rule out the rest."
         except Exception:                                   # the data behind it is missing in this recording
             return ""
 

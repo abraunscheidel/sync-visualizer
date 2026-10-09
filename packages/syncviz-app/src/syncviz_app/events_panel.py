@@ -20,7 +20,7 @@ EMPTY_TEXT = "No event conditions. Add one to keep only the segments where somet
 
 
 class ConditionDialog(QDialog):
-    """Choose the events, the answer, and optionally the part of the segment to look in."""
+    """Choose the events, and whether they happened or did not."""
 
     def __init__(self, context, condition: Condition | None = None, parent=None) -> None:
         super().__init__(parent)
@@ -55,29 +55,6 @@ class ConditionDialog(QDialog):
         row.addWidget(self.yes)
         row.addWidget(self.no)
         layout.addLayout(row)
-        self.limit = not_saved(QCheckBox("Only count it if it happens early in the segment"), "a dialog's own choice")
-        self.limit.setToolTip(
-            "Counted from the START of each segment (a trial, or a window), not around the event. For example 0 to 500 ms "
-            "keeps the segments where it happened in the first half second. Leave this off to count it anywhere in the "
-            "segment, which is usually what is wanted.")
-        window = condition.window_ms if condition and condition.window_ms else (0.0, 500.0)
-        self.limit.setChecked(bool(condition and condition.window_ms))
-        self.start = not_saved(QDoubleSpinBox(), "a dialog's own value")
-        self.stop = not_saved(QDoubleSpinBox(), "a dialog's own value")
-        for box, value in ((self.start, window[0]), (self.stop, window[1])):
-            box.setRange(-60000.0, 600000.0)
-            box.setSuffix(" ms")
-            box.setValue(value)
-            box.setEnabled(self.limit.isChecked())
-        self.limit.toggled.connect(self.start.setEnabled)
-        self.limit.toggled.connect(self.stop.setEnabled)
-        layout.addWidget(self.limit)
-        span = QHBoxLayout()
-        span.addWidget(QLabel("from the start, at"))
-        span.addWidget(self.start)
-        span.addWidget(QLabel("until"))
-        span.addWidget(self.stop)
-        layout.addLayout(span)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -105,8 +82,7 @@ class ConditionDialog(QDialog):
         events = self.chosen()
         if not events:
             return None
-        window = (self.start.value(), max(self.stop.value(), self.start.value())) if self.limit.isChecked() else None
-        return Condition(tuple(events), self.yes.isChecked(), window, self._edge)
+        return Condition(tuple(events), self.yes.isChecked(), self._edge)
 
 
 class ClipDialog(QDialog):

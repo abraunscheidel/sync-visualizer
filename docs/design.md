@@ -2442,8 +2442,11 @@ and that entering the offset makes the video line up (blackouts back on the tria
 changed or removed with a click. One chip is one question with an answer: a list of events of which any one counts (the OR) and
 yes or no. Different chips combine with AND, and with the other filters. This covers "(C0 or C1 touched) and (licked)" without a
 query builder; deeper nesting would use saved groups as building blocks. The panel starts empty and the user adds what they need;
-the picker offers only the events the project names, grouped by scope, with search; the chips are saved in the workspace. A chip
-may carry a window relative to the segment ("within the first 500 ms"); by default it means anywhere in the segment. Clicking an
+the picker offers only the events the project names, grouped by scope, with search; the chips are saved in the workspace. A condition is about the
+whole segment; a window measured from the start of a segment was tried and removed, because it has no clear use and shares a word with the
+clip window, which is the useful one (moments around an event). To look at moments around an event, make windows around it (a derived
+segmentation) and put conditions on those. Timing between two events ("within 5 to 50 ms after") would be a different, relative condition,
+not built. Clicking an
 event in an indicator-lights view offers two commands: only segments with this event (adds a chip), and make windows around this
 event (asks for the size, with a project default, and adds a derived segmentation saved in the workspace). The indicator view
 gains group headings and a search box so a long list stays usable. The usability of the chips should be tested with real use

@@ -21,37 +21,26 @@ from syncviz.resources.intervals import IntervalSeries
 class Condition:
     events: tuple[str, ...]                                   # names of the events; any one of them counts
     answer: bool = True                                       # True: at least one happened; False: none did
-    window_ms: tuple[float, float] | None = None              # only look in this part of the segment, from its start
     edge: str = "overlap"                                     # for an interval event: overlap, start or stop
 
     def label(self) -> str:
         names = " or ".join(self.events)
-        where = "" if self.window_ms is None else f"  ({self.window_ms[0]:g} to {self.window_ms[1]:g} ms from the start)"
-        return f"{names}: {'yes' if self.answer else 'no'}{where}"
+        return f"{names}: {'yes' if self.answer else 'no'}"
 
     def to_dict(self) -> dict:
-        out = {"events": list(self.events), "answer": self.answer, "edge": self.edge}
-        if self.window_ms is not None:
-            out["window_ms"] = list(self.window_ms)
-        return out
+        return {"events": list(self.events), "answer": self.answer, "edge": self.edge}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Condition":
-        window = data.get("window_ms")
-        return cls(tuple(str(e) for e in data["events"]), bool(data.get("answer", True)),
-                   None if window is None else (float(window[0]), float(window[1])), str(data.get("edge", "overlap")))
+        return cls(tuple(str(e) for e in data["events"]), bool(data.get("answer", True)), str(data.get("edge", "overlap")))
 
 
 def condition_mask(segments: IntervalSeries, condition: Condition, find: Callable[[str], object]) -> np.ndarray:
     """Which segments satisfy `condition`. `find(name)` returns the events (an `EventSeries` or an `IntervalSeries`) called
     `name`, or raises `KeyError` / `MissingDataError` when the recording has none."""
-    where = segments
-    if condition.window_ms is not None:
-        a, b = (v / 1000.0 for v in condition.window_ms)
-        where = IntervalSeries(segments.starts + a, np.maximum(segments.starts + b, segments.starts + a))
     counts = np.zeros(len(segments), dtype=int)
     for name in condition.events:
-        counts += count_in_segments(where, find(name), condition.edge)
+        counts += count_in_segments(segments, find(name), condition.edge)
     return counts > 0 if condition.answer else counts == 0
 
 
