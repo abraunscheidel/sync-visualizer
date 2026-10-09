@@ -98,6 +98,10 @@ class SegmentNavigator:
     def match_count(self) -> int:
         return len(self._visible)
 
+    def visible_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """Start and stop of every segment that matches the filter, in time order (what an analysis should be limited to)."""
+        return self._visible_starts, self._visible_stops
+
     def _navigable(self) -> Any:
         """The segments movement may visit: the matching ones if restricted, else all of them."""
         return self._visible if self._skip_hidden else self._all
