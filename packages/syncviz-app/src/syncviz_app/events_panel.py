@@ -106,6 +106,41 @@ class ConditionDialog(QDialog):
         return Condition(tuple(events), self.yes.isChecked(), window, self._edge)
 
 
+class ClipDialog(QDialog):
+    """How much of the time around an event to include, and what to cut around when the event lasts."""
+
+    def __init__(self, name: str, clip: dict, parent=None) -> None:
+        super().__init__(parent)
+        from PySide6.QtWidgets import QComboBox, QFormLayout
+
+        self.setWindowTitle(f"Clip window: {name}")
+        form = QFormLayout(self)
+        self.before = not_saved(QDoubleSpinBox(), "a dialog's own value")
+        self.after = not_saved(QDoubleSpinBox(), "a dialog's own value")
+        for box, value in ((self.before, clip["before_ms"]), (self.after, clip["after_ms"])):
+            box.setRange(0.0, 600000.0)
+            box.setSuffix(" ms")
+            box.setValue(float(value))
+        self.before.setToolTip("How much to include before it")
+        self.after.setToolTip("How much to include after it")
+        self.anchor = not_saved(QComboBox(), "a dialog's own choice")
+        for label, value in (("The whole event", "span"), ("Its start only", "start"), ("Its end only", "stop")):
+            self.anchor.addItem(label, value)
+        self.anchor.setCurrentIndex(max(self.anchor.findData(clip["anchor"]), 0))
+        self.anchor.setToolTip("For an event that lasts: cut around all of it, or only around where it starts or ends. "
+                               "It makes no difference to an event that is a single moment.")
+        form.addRow("Before", self.before)
+        form.addRow("After", self.after)
+        form.addRow("Around", self.anchor)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def values(self) -> tuple[float, float, str]:
+        return self.before.value(), self.after.value(), self.anchor.currentData()
+
+
 class EventsPanel(QWidget):
     def __init__(self, context) -> None:
         super().__init__()

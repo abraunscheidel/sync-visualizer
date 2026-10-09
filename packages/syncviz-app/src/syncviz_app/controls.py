@@ -251,15 +251,11 @@ class FilterBar(QToolBar):
 
         self.addWidget(_caption("Filter"))
         self.segmentation = None
+        self._segmentation_action = None
+        self._anchor = self.addSeparator()            # the filters (and the segmentation choice) are placed before this
         if len(self.segmentations) > 1:
-            self.segmentation = saved_in_workspace(QComboBox())
-            self.segmentation.setToolTip("Which segments to move between: the project's own, or windows cut around events")
-            for name, info in self.segmentations.items():
-                self.segmentation.addItem(info.get("plural") or f"{info.get('label', name)}s", name)
+            self._make_segmentation_choice()
             self.segmentation.setCurrentIndex(max(self.segmentation.findData(active), 0))
-            self.segmentation.activated.connect(self._segmentation_chosen)
-            self.addWidget(self.segmentation)
-        self._anchor = self.addSeparator()            # the filters are placed before this
         self._filters: dict[str, QComboBox] = {}
         self._filter_actions: list = []
         self._install_filters(filter_attributes if active is None else self._filters_of.get(active, []))
@@ -283,6 +279,24 @@ class FilterBar(QToolBar):
         nav.subscribe(lambda _n: self._update_match_label())
         self._update_match_label()
         self._defaults = self.state()
+
+    def _make_segmentation_choice(self) -> None:
+        self.segmentation = saved_in_workspace(QComboBox())
+        self.segmentation.setToolTip("Which segments to move between: the project's own, or windows cut around events")
+        for name, info in self.segmentations.items():
+            self.segmentation.addItem(info.get("plural") or f"{info.get('label', name)}s", name)
+        self.segmentation.activated.connect(self._segmentation_chosen)
+        self._segmentation_action = self.insertWidget(self._anchor, self.segmentation)
+
+    def add_segmentation(self, name: str, info: dict) -> None:
+        """Offer another segmentation (windows the user made from events) in the choice."""
+        self.segmentations[name] = info
+        self._filters_of[name] = list(info.get("filters", []))
+        if self.segmentation is None:
+            self._make_segmentation_choice()
+            self.segmentation.setCurrentIndex(max(self.segmentation.findData(self.active), 0))
+        elif self.segmentation.findData(name) < 0:
+            self.segmentation.addItem(info.get("plural") or f"{info.get('label', name)}s", name)
 
     def _install_filters(self, attributes: list[str]) -> None:
         """One dropdown for each attribute of the current segments, placed before the match count."""

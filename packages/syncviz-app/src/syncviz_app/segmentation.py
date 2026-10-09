@@ -13,10 +13,12 @@ that turn "what happens inside" each one into attributes you can filter by (desi
         label: Touch
         derive:                                     # a window around each event, inside the segment it falls in
           from: "session:processing/behavior/contacts_C0"
-          edge: start
           before_ms: 500
           after_ms: 500
+          anchor: span                              # for an event that lasts: span (the default), start or end
           within: trials                            # windows are clipped to a trial and take its attributes
+          # or, for windows the user made from named events, each with its own window:
+          # sources: [{event: "Contact C0", before_ms: 250, after_ms: 1000, anchor: span}, ...]
         filters: [stimulus, outcome]
 """
 
@@ -24,22 +26,23 @@ from __future__ import annotations
 
 import numpy as np
 
-from syncviz.epochs import derive_epochs, measure
+from syncviz.epochs import EpochSource, epochs_from_sources, measure
 from syncviz.resources import EventSeries, IntervalSeries
 from syncviz.sources import MissingDataError
 
 
-def segments(specs: dict[str, dict], name: str, resources, notes: list[str] | None = None) -> IntervalSeries:
-    """The segments called `name` in `specs`, for the recording in `resources`. Kept, so every caller shares one."""
-    return resources.cached(("segments", name), lambda: _build(specs, name, resources, notes, ()))
+def segments(specs: dict[str, dict], name: str, resources, notes: list[str] | None = None, events=None) -> IntervalSeries:
+    """The segments called `name` in `specs`, for the recording in `resources`. Kept, so every caller shares one.
+    `events` finds the data behind the event names a derived segmentation may use (`EventConditions.find_in`)."""
+    return resources.cached(("segments", name), lambda: _build(specs, name, resources, notes, (), events))
 
 
-def _build(specs, name, resources, notes, building) -> IntervalSeries:
+def _build(specs, name, resources, notes, building, events=None) -> IntervalSeries:
     if name in building:
         raise ValueError(f"segmentations {' -> '.join(building + (name,))} refer to each other in a circle")
     spec = specs[name]
     if "derive" in spec:
-        base = _derive(specs, name, spec["derive"], resources, notes, building + (name,))
+        base = _derive(specs, name, spec["derive"], resources, notes, building + (name,), events)
     else:
         base = resources.intervals(spec["from"])
     for attribute, how in (spec.get("measures") or {}).items():
@@ -62,20 +65,32 @@ def resources_description(how: dict) -> str:
     return str(how.get("description", ""))
 
 
-def _derive(specs, name, how, resources, notes, building) -> IntervalSeries:
-    source = resources.events_or_intervals(how["from"], how.get("member"))
-    if isinstance(source, EventSeries):
-        times = source.times
+def _source_of(data, how: dict, default_anchor: str, before: float, after: float) -> EpochSource:
+    """Windows around `data` (an `EventSeries` or an `IntervalSeries`) as the spec `how` says."""
+    anchor = how.get("anchor", how.get("edge", default_anchor))
+    anchor = {"end": "stop"}.get(anchor, anchor)
+    if isinstance(data, EventSeries):
+        return EpochSource(data.times, None, before, after)
+    return EpochSource(data.starts, data.stops, before, after, anchor)
+
+
+def _derive(specs, name, how, resources, notes, building, events=None) -> IntervalSeries:
+    sources = []
+    if "sources" in how:                                      # windows around named events, each with its own window
+        if events is None:
+            raise ValueError(f"{name}: windows around named events need the project's events")
+        for item in how["sources"]:
+            data = events.find_in(resources, item["event"])
+            sources.append(_source_of(data, item, "span", float(item.get("before_ms", 0)) / 1000.0,
+                                      float(item.get("after_ms", 0)) / 1000.0))
     else:
-        edge = how.get("edge", "start")
-        if edge not in ("start", "stop"):
-            raise ValueError(f"derive.edge must be 'start' or 'stop' for an interval table, got {edge!r}")
-        times = source.starts if edge == "start" else source.stops
+        data = resources.events_or_intervals(how["from"], how.get("member"))
+        sources.append(_source_of(data, how, "span", float(how.get("before_ms", 0)) / 1000.0,
+                                  float(how.get("after_ms", 0)) / 1000.0))
     parent_name = how.get("within")
-    parent = _build(specs, parent_name, resources, notes, building) if parent_name else None
+    parent = _build(specs, parent_name, resources, notes, building, events) if parent_name else None
     label = specs[parent_name].get("label", parent_name) if parent_name else "Segment"
-    epochs = derive_epochs(np.asarray(times), float(how.get("before_ms", 0)) / 1000.0, float(how.get("after_ms", 0)) / 1000.0,
-                           parent, bool(how.get("merge", True)), how.get("count_name", "Events"), label, name)
+    epochs = epochs_from_sources(sources, parent, bool(how.get("merge", True)), how.get("count_name", "Events"), label, name)
     if len(epochs) == 0:
         raise MissingDataError(f"no {specs[name].get('label', name).lower()} windows: the events never fall in the segments")
     return epochs

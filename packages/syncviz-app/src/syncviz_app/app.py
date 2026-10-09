@@ -44,12 +44,12 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
 
     context.dates = project.dates
     context.inspector = Inspector(context)
-    context.events = EventConditions(context, project.event_groups)
+    context.events = EventConditions(context, project.event_groups, project.clip_defaults)
     context.commands = CommandRegistry(context, project.config.get("interaction"), DEFAULT_KEYS)
 
     # Segment navigation (the first configured segmentation).
     for name, spec in project.segmentation_specs.items():
-        intervals = segments(project.segmentation_specs, name, project.resources, context.notes)
+        intervals = segments(project.segmentation_specs, name, project.resources, context.notes, context.events)
         context.navigator = SegmentNavigator(
             bus, intervals, label=spec.get("label", "Segment"), index_attribute=spec.get("number_attribute"),
             label_plural=spec.get("label_plural"),

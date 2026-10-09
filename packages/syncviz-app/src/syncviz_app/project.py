@@ -126,6 +126,10 @@ class ResourceStore:
 
         return self._get(key, build)
 
+    def forget(self, key: tuple) -> None:
+        """Drop a result kept by `cached`, so it is made again with whatever has changed."""
+        self._cache.pop(("cached",) + key, None)
+
     def cached(self, key: tuple, load):
         """`load()`, done once per key for this recording."""
         return self._get(("cached",) + key, load)
@@ -216,6 +220,12 @@ class Project:
         """The events the user can build conditions from, by scope: `events: {Contacts: {Whisker C0 touch: {from: ...}}}`."""
         return {str(group): {str(name): dict(spec) for name, spec in (events or {}).items()}
                 for group, events in (self.config.get("events") or {}).items()}
+
+    @property
+    def clip_defaults(self) -> dict:
+        """`clip: {before_ms: 500, after_ms: 500, anchor: span}` in the project file: the window cut around an event unless
+        the event says otherwise."""
+        return dict(self.config.get("clip") or {})
 
     @property
     def segmentation_specs(self) -> dict[str, dict]:

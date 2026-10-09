@@ -13,14 +13,18 @@ it lives in a core panel (`events_panel.py`), not in a view.
 from __future__ import annotations
 
 from syncviz.conditions import Condition, conditions_mask
+from syncviz.epochs import ANCHORS
 from syncviz.inspection import Target
 from syncviz_app.project import split_ref
 
 
 class EventConditions:
-    def __init__(self, context, groups: dict[str, dict[str, dict]] | None = None) -> None:
+    def __init__(self, context, groups: dict[str, dict[str, dict]] | None = None, defaults: dict | None = None) -> None:
         self.context = context
         self.groups = groups or {}                          # scope -> event name -> {from, member?}
+        self.defaults = dict(defaults or {})                # the project's `clip:` (before_ms, after_ms, anchor)
+        self.clip_overrides: dict[str, dict] = {}           # per event, set by the user
+        self.user_segmentations: dict[str, dict] = {}       # windows the user made from events: name -> segmentation spec
         self.items: list[Condition] = []
         self.message = ""                                   # why the last change was refused, for the panel to show
         self._observers: list = []
@@ -35,10 +39,35 @@ class EventConditions:
     def names(self) -> list[str]:
         return [name for events in self.groups.values() for name in events]
 
+    def find_in(self, resources, name: str):
+        """The data behind an event name in the recording `resources` holds."""
+        spec = self.spec_of(name)
+        return resources.events_or_intervals(spec["from"], spec.get("member"))
+
     def find(self, name: str):
         """The data behind an event name in the open recording."""
+        return self.find_in(self.context.resources, name)
+
+    # -- the window cut around an event ----------------------------------------------------------
+    def clip(self, name: str) -> dict:
+        """`{before_ms, after_ms, anchor}` for an event: what the user set, else the event's own entry in the project, else the
+        project's `clip:` default, else 500 ms either side of the whole event."""
+        base = {"before_ms": 500.0, "after_ms": 500.0, "anchor": "span"}
+        base.update({k: v for k, v in self.defaults.items() if k in base})
         spec = self.spec_of(name)
-        return self.context.resources.events_or_intervals(spec["from"], spec.get("member"))
+        if "clip_ms" in spec:
+            base["before_ms"], base["after_ms"] = (float(v) for v in spec["clip_ms"])
+        if "anchor" in spec:
+            base["anchor"] = spec["anchor"]
+        base.update(self.clip_overrides.get(name, {}))
+        return base
+
+    def set_clip(self, name: str, before_ms: float, after_ms: float, anchor: str) -> None:
+        if anchor not in ANCHORS:
+            raise ValueError(f"anchor must be one of {ANCHORS}")
+        self.clip_overrides[name] = {"before_ms": max(float(before_ms), 0.0), "after_ms": max(float(after_ms), 0.0),
+                                     "anchor": anchor}
+        self._notify()
 
     def name_of(self, target: Target) -> str | None:
         """The project's name for the event `target` points at, if it names it."""
@@ -110,9 +139,12 @@ class EventConditions:
 
     # -- what a workspace saves --------------------------------------------------------------
     def state(self) -> dict:
-        return {"conditions": [c.to_dict() for c in self.items]}
+        return {"conditions": [c.to_dict() for c in self.items], "clips": {k: dict(v) for k, v in self.clip_overrides.items()},
+                "segmentations": {k: dict(v) for k, v in self.user_segmentations.items()}}
 
     def apply_state(self, state: dict) -> None:
+        self.clip_overrides = {str(k): dict(v) for k, v in state.get("clips", {}).items() if k in self.names()}
+        self.user_segmentations = {str(k): dict(v) for k, v in state.get("segmentations", {}).items()}
         items = []
         for data in state.get("conditions", []):
             try:

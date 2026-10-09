@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pytest
 
-from syncviz.epochs import count_in_segments, derive_epochs, measure
+from syncviz.epochs import EpochSource, count_in_segments, derive_epochs, epochs_from_sources, measure
 from syncviz.resources.events import EventSeries
 from syncviz.resources.intervals import IntervalSeries
 
@@ -231,3 +231,147 @@ def test_yaml_turns_unquoted_yes_and_no_into_booleans_so_the_labels_are_checked(
                                                  "labels": [False, True]}}}}
     with pytest.raises(ValueError, match="quotes"):
         segments(specs, "checked", window.context.resources)
+
+
+# -- windows around events that last, and several kinds of event at once ----------------------------------------------
+CONTACTS = (np.array([3.0, 7.0]), np.array([4.2, 7.1]))                  # a long touch in trial 1, a brief one in trial 2
+
+
+def test_the_whole_event_is_the_default_thing_to_cut_around():
+    epochs = epochs_from_sources([EpochSource(*CONTACTS, before=0.5, after=0.5)])
+    assert epochs.starts.tolist() == [2.5, 6.5] and epochs.stops.tolist() == [4.7, 7.6]
+
+
+def test_only_the_start_or_only_the_end_can_be_the_anchor():
+    start = epochs_from_sources([EpochSource(*CONTACTS, before=0.5, after=0.5, anchor="start")])
+    assert start.starts.tolist() == [2.5, 6.5] and start.stops.tolist() == [3.5, 7.5]
+    end = epochs_from_sources([EpochSource(*CONTACTS, before=0.5, after=0.5, anchor="stop")])
+    assert end.starts.tolist() == pytest.approx([3.7, 6.6]) and end.stops.tolist() == pytest.approx([4.7, 7.6])
+    with pytest.raises(ValueError):
+        epochs_from_sources([EpochSource(*CONTACTS, anchor="middle")])
+
+
+def test_an_instant_has_no_edges_so_the_anchor_does_not_matter():
+    for anchor in ("span", "start", "stop"):
+        epochs = epochs_from_sources([EpochSource(np.array([2.0]), None, 0.5, 1.0, anchor)])
+        assert epochs.starts.tolist() == [1.5] and epochs.stops.tolist() == [3.0]
+
+
+def test_each_source_has_its_own_window_and_overlapping_ones_are_merged_so_nothing_is_left_out():
+    licks = EpochSource(np.array([3.5, 12.0]), None, before=0.1, after=0.1)
+    contacts = EpochSource(*CONTACTS, before=0.5, after=0.5)
+    epochs = epochs_from_sources([licks, contacts])
+    # the lick's short window at 3.5 lies inside the long contact window, so they become one; the others stand alone
+    assert epochs.starts.tolist() == [2.5, 6.5, 11.9] and epochs.stops.tolist() == [4.7, 7.6, 12.1]
+    assert epochs.attributes["Events"].tolist() == [2, 1, 1]
+
+
+def test_inside_a_parent_a_window_follows_where_the_event_starts_and_is_clipped_to_it():
+    long_touch = (np.array([4.5]), np.array([6.0]))                       # starts in trial 1, ends in trial 2
+    epochs = epochs_from_sources([EpochSource(*long_touch, before=0.5, after=0.5)], parent=TRIALS, parent_name="Trial")
+    assert epochs.starts.tolist() == [4.0] and epochs.stops.tolist() == [5.0]        # clipped to trial 1, where it begins
+    assert epochs.attributes["Trial"].tolist() == [1]
+
+
+def test_the_end_anchored_window_belongs_to_the_trial_the_event_ends_in():
+    long_touch = (np.array([4.5]), np.array([6.0]))
+    epochs = epochs_from_sources([EpochSource(*long_touch, before=0.5, after=0.5, anchor="stop")], parent=TRIALS)
+    assert epochs.attributes["number"].tolist() == [2]
+
+
+# -- clip windows and the windows a user makes --------------------------------------------------------------------------
+def test_a_clip_window_comes_from_the_user_else_the_event_else_the_project_else_a_default(window):
+    events = window.context.events
+    assert events.clip("Lick left") == {"before_ms": 500.0, "after_ms": 500.0, "anchor": "span"}
+    events.defaults = {"before_ms": 300, "anchor": "start"}
+    assert events.clip("Lick left") == {"before_ms": 300, "after_ms": 500.0, "anchor": "start"}
+    events.groups["Licks"]["Lick left"]["clip_ms"] = [100, 900]
+    assert events.clip("Lick left")["before_ms"] == 100.0 and events.clip("Lick left")["after_ms"] == 900.0
+    events.set_clip("Lick left", 50, 60, "stop")
+    assert events.clip("Lick left") == {"before_ms": 50.0, "after_ms": 60.0, "anchor": "stop"}
+    with pytest.raises(ValueError):
+        events.set_clip("Lick left", 1, 1, "middle")
+
+
+def test_clip_windows_are_saved_in_the_workspace_and_unknown_events_are_ignored(window):
+    events = window.context.events
+    events.set_clip("Contact C0", 250, 750, "start")
+    saved = window.settings()["events"]
+    events.clip_overrides = {}
+    events.apply_state({**saved, "clips": {**saved["clips"], "Not an event": {"before_ms": 1, "after_ms": 1, "anchor": "span"}}})
+    assert events.clip("Contact C0")["before_ms"] == 250.0 and "Not an event" not in events.clip_overrides
+
+
+def test_a_derived_segmentation_cuts_around_the_whole_contact_unless_told_otherwise(window):
+    specs = {"trials": window.project.segmentation_specs["trials"],
+             "whole": {"label": "Whole", "derive": {"from": "session:processing/behavior/contacts_C0", "before_ms": 500,
+                                                     "after_ms": 500, "within": "trials"}}}
+    whole = segments(specs, "whole", window.context.resources)
+    assert whole.starts.tolist() == [2.5] and whole.stops.tolist() == [4.0]           # the contact lasts from 3.0 to 3.5
+    specs["onset"] = {"label": "Onset", "derive": {**specs["whole"]["derive"], "anchor": "start"}}
+    assert segments(specs, "onset", window.context.resources).stops.tolist() == [3.5]
+
+
+def test_making_windows_around_events_uses_each_events_own_clip_and_adds_a_segmentation_to_choose(window):
+    events = window.context.events
+    events.set_clip("Lick left", 100, 100, "span")
+    events.set_clip("Contact C0", 500, 500, "span")
+    assert window.windows_around(["Lick left", "Contact C0"])
+    nav = window.context.navigator
+    assert window.active_segmentation == "around: Lick left + Contact C0"
+    assert nav.label == "window" and nav.count == 3                          # two short lick windows, then the longer contact one
+    assert "around: Lick left + Contact C0" in [window.filter_bar.segmentation.itemData(i)
+                                                for i in range(window.filter_bar.segmentation.count())]
+
+
+def test_windows_around_one_event_are_named_after_it_and_use_its_clip(window):
+    window.context.events.set_clip("Contact C0", 250, 250, "span")
+    assert window.windows_around(["Contact C0"])
+    assert window.context.navigator.label == "Contact C0 window"
+    assert window.context.navigator.bounds == pytest.approx((2.75, 3.75))
+    window.context.events.set_clip("Contact C0", 1000, 1000, "span")             # asking again with a new clip replaces it
+    assert window.windows_around(["Contact C0"])
+    assert window.context.navigator.bounds == pytest.approx((2.0, 4.5))
+
+
+def test_the_windows_a_user_made_come_back_with_the_workspace(window):
+    window.windows_around(["Contact C0"])
+    saved = window.settings()
+    window.set_segmentation("trials")
+    del window.project.config["segmentations"]["around: Contact C0"]
+    window.context.events.user_segmentations.clear()
+    window._apply_settings(saved)
+    assert window.active_segmentation == "around: Contact C0" and window.context.navigator.label == "Contact C0 window"
+
+
+def test_the_commands_are_offered_on_named_events_and_the_clip_dialog_sets_the_clip(window, monkeypatch):
+    from syncviz.inspection import Target
+    registry = window.context.commands
+    contact = Target("session", "processing/behavior/contacts_C0", "intervals", None, "Contact C0")
+    other = Target("session", "units", "events", "7", "Unit 7")
+    assert {"Make windows around this event", "Clip window…"} <= {c.label for c in registry.for_target(contact)}
+    assert not {"Make windows around this event", "Clip window…"} & {c.label for c in registry.for_target(other)}
+    from syncviz_app import events_panel
+
+    class Fake:
+        def __init__(self, name, clip, parent=None):
+            self.seen = (name, clip)
+
+        def exec(self):
+            return events_panel.QDialog.DialogCode.Accepted
+
+        def values(self):
+            return 10.0, 20.0, "stop"
+
+    monkeypatch.setattr(events_panel, "ClipDialog", Fake)
+    registry.run("set_clip", contact)
+    assert window.context.events.clip("Contact C0") == {"before_ms": 10.0, "after_ms": 20.0, "anchor": "stop"}
+    assert registry.run("windows_around", contact) and window.context.navigator.label == "Contact C0 window"
+
+
+def test_the_clip_dialog_starts_from_the_current_clip_and_returns_its_values(window):
+    from syncviz_app.events_panel import ClipDialog
+    dialog = ClipDialog("Contact C0", {"before_ms": 250.0, "after_ms": 750.0, "anchor": "start"})
+    assert dialog.values() == (250.0, 750.0, "start")
+    dialog.anchor.setCurrentIndex(dialog.anchor.findData("stop"))
+    assert dialog.values()[2] == "stop"

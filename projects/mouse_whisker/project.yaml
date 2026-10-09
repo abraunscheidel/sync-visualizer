@@ -50,27 +50,27 @@ segmentations:
     from: session:intervals/trials
     number_attribute: trial      # shown as the segment's number
     filters: [stimulus, outcome, choice, servo_position]
-  # Windows cut around events: 500 ms either side of the start of every touch, inside the trial it falls in. They take the
+  # Windows cut around events: 500 ms either side of the whole of every touch, inside the trial it falls in. They take the
   # trial's attributes, and movement stays inside them. Choose between these and trials in the toolbar.
   touches_c0:
     label: "C0 touch"
     label_plural: "C0 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C0", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C0", before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus, outcome, choice, servo_position]
   touches_c1:
     label: "C1 touch"
     label_plural: "C1 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C1", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C1", before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus, outcome, choice, servo_position]
   touches_c2:
     label: "C2 touch"
     label_plural: "C2 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C2", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C2", before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus, outcome, choice, servo_position]
   touches_c3:
     label: "C3 touch"
     label_plural: "C3 touches"
-    derive: {from: "session:processing/behavior/contacts_by_whisker_C3", edge: start, before_ms: 500, after_ms: 500, within: trials}
+    derive: {from: "session:processing/behavior/contacts_by_whisker_C3", before_ms: 500, after_ms: 500, within: trials}
     filters: [stimulus, outcome, choice, servo_position]
 
 # Notes on how to read a field, shown as tooltips next to the description the data file itself gives. Keys are the names
@@ -94,6 +94,11 @@ glossary:
   Contact point C1: "Where on the picture whisker C1 touched the object, averaged over the contact, so the ring does not move during it."
   Contact point C2: "Where on the picture whisker C2 touched the object, averaged over the contact, so the ring does not move during it."
   Contact point C3: "Where on the picture whisker C3 touched the object, averaged over the contact, so the ring does not move during it."
+
+# The window cut around an event ("Make windows around this event"): how much to include before and after it, and for an event that
+# lasts what to cut around (span: all of it, start, or stop). An event can say its own with `clip_ms: [before, after]` and `anchor:`;
+# the viewer can change either from the event's menu (Clip window…) and the choice is saved with the workspace.
+clip: {before_ms: 500, after_ms: 500, anchor: span}
 
 # The events the Events panel can build conditions from ("keep the trials where any of these happened"), by scope. The panel
 # starts empty; the viewer adds what they need and saves it in the workspace. Names here are the ones shown, and the glossary

@@ -228,6 +228,29 @@ class MainWindow(QMainWindow):
         registry.register(Command("only_with_event", "Only segments with this event", only_with_event,
                                   applies=lambda t: self.context.events.name_of(t) is not None,
                                   description="Add an event condition that keeps only the segments where this happens"))
+        def windows_around(target, _origin) -> None:
+            name = self.context.events.name_of(target)
+            if name is not None:
+                self.windows_around([name])
+
+        def set_clip(target, _origin) -> None:
+            from syncviz_app.events_panel import ClipDialog
+
+            name = self.context.events.name_of(target)
+            if name is None:
+                return
+            dialog = ClipDialog(name, self.context.events.clip(name), self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.context.events.set_clip(name, *dialog.values())
+
+        registry.register(Command("windows_around", "Make windows around this event", windows_around,
+                                  applies=lambda t: self.context.events.name_of(t) is not None,
+                                  description="Cut a window around every occurrence of this event, using its clip window, and move "
+                                              "between them like trials"))
+        registry.register(Command("set_clip", "Clip window…", set_clip,
+                                  applies=lambda t: self.context.events.name_of(t) is not None,
+                                  description="How much to include before and after this event, and whether to cut around the "
+                                              "whole event or just its start or end"))
         registry.register(Command("show_details", "Show details", show_details,
                                        description="Select this and bring up the Details panel"))
         registry.register(Command("open_as_view", "Open as view", children=lambda t, o=None: ways_to_open(t, o, False),
@@ -300,6 +323,9 @@ class MainWindow(QMainWindow):
             self.views_panel.show_settings()
 
     def _apply_settings(self, settings: dict) -> None:
+        for name, spec in (settings.get("events", {}).get("segmentations") or {}).items():
+            if name not in self.project.segmentation_specs:
+                self.add_user_segmentation(name, dict(spec))
         self._apply_lags(settings.get("view_lags", {}))
         self._apply_view_settings(settings.get("view_settings", {}))
         self.navigation.apply_state(settings.get("navigation", {}))
@@ -410,11 +436,11 @@ class MainWindow(QMainWindow):
                     if context.navigator is not None:
                         name = self.active_segmentation
                         try:
-                            found = segments(project.segmentation_specs, name, opened, segment_notes)
+                            found = segments(project.segmentation_specs, name, opened, segment_notes, context.events)
                         except Exception as exc:                  # this recording lacks what the segmentation needs
                             name = next(iter(project.segmentation_specs))
                             segment_notes.append(f"{self.active_segmentation}: {exc}; using {name}")
-                            found = segments(project.segmentation_specs, name, opened, segment_notes)
+                            found = segments(project.segmentation_specs, name, opened, segment_notes, context.events)
                         chosen[0] = name
                     return opened, found
                 except BaseException:
@@ -470,7 +496,7 @@ class MainWindow(QMainWindow):
             return False
         notes: list[str] = []
         try:
-            intervals = segments(project.segmentation_specs, name, context.resources, notes)
+            intervals = segments(project.segmentation_specs, name, context.resources, notes, context.events)
         except Exception as exc:
             self.statusBar().showMessage(f"Could not open {project.segmentation_specs[name].get('label', name)}: {exc}", 10000)
             return False
@@ -484,6 +510,31 @@ class MainWindow(QMainWindow):
             self.filter_bar.show_segmentation(name)
         context.events.reapply()
         return True
+
+    def add_user_segmentation(self, name: str, spec: dict) -> None:
+        """Offer windows the user made from events as a segmentation, and keep them with the workspace."""
+        self.project.config.setdefault("segmentations", {})[name] = spec
+        self.context.events.user_segmentations[name] = spec
+        self.context.resources.forget(("segments", name))              # a new window setting replaces the old one
+        if name == self.active_segmentation:
+            self.active_segmentation = None                            # so choosing it again builds the new windows
+        if self.filter_bar is not None:
+            self.filter_bar.add_segmentation(name, {"label": spec.get("label", name), "plural": spec.get("label_plural"),
+                                                    "filters": spec.get("filters", [])})
+
+    def windows_around(self, names: list[str]) -> bool:
+        """Make windows around these events, each with its own window (before, after, anchor), merged where they overlap,
+        inside the segments of the first segmentation; and move to them."""
+        events = self.context.events
+        base = next(iter(self.project.segmentation_specs), None)
+        sources = [{"event": n, **events.clip(n)} for n in names]
+        label = " + ".join(names)
+        name = f"around: {label}"
+        parent = self.project.segmentation_specs.get(base, {})
+        spec = {"label": f"{label} window" if len(names) == 1 else "window", "label_plural": f"{label} windows" if len(names) == 1 else "windows",
+                "derive": {"sources": sources, **({"within": base} if base else {})}, "filters": list(parent.get("filters", []))}
+        self.add_user_segmentation(name, spec)
+        return self.set_segmentation(name)
 
     def switch_workspace(self, name: str) -> bool:
         """Open a saved workspace. Changes to the one in use that were not saved are dropped."""

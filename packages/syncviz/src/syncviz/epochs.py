@@ -1,18 +1,20 @@
-"""Epochs: stretches of time cut out around things that happen, and what happens inside segments (design doc 28.9).
+"""Epochs: stretches of time cut out around things that happen, and what happens inside segments (design doc 28.9, 28.11).
 
-Two pure operations on the generic resources, with no knowledge of what the events are:
+Pure operations on the generic resources, with no knowledge of what the events are:
 
 * `measure` counts the events (or intervals) that fall in each segment, so "trials where whisker C0 touched" becomes an
   attribute of the trials like any other, and the ordinary filters work on it.
-* `derive_epochs` makes a new set of segments, a window around each event, that carries the attributes of the segment each
-  one falls in. Windows that overlap are merged, so segments never overlap and navigating them works unchanged.
+* `epochs_from_sources` makes a new set of segments, a window around each event, that carries the attributes of the segment
+  each one falls in. Each source of events has its own window (time before, time after) and, for an event that lasts, an
+  anchor: the whole interval, or just its start or its end. Windows that overlap are merged, so what any source asked for is
+  never left out and segments never overlap, which keeps navigating them simple.
 
 Both return values the navigator and filters already understand: an `IntervalSeries` with attributes.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -20,6 +22,7 @@ from syncviz.resources.events import EventSeries
 from syncviz.resources.intervals import IntervalSeries
 
 EDGES = ("overlap", "start", "stop")
+ANCHORS = ("span", "start", "stop")        # what an event that lasts is cut around: all of it, its start, or its end
 
 
 def count_in_segments(segments: IntervalSeries, events, edge: str = "overlap") -> np.ndarray:
@@ -56,29 +59,59 @@ def measure(segments: IntervalSeries, name: str, events, edge: str = "overlap", 
     return replace(segments, attributes={**segments.attributes, name: values}, descriptions=descriptions)
 
 
-def derive_epochs(times, before: float, after: float, parent: IntervalSeries | None = None, merge: bool = True,
-                  count_name: str = "Events", parent_name: str = "Segment", name: str = "") -> IntervalSeries:
-    """A window from `before` seconds earlier to `after` seconds later around each time.
+@dataclass(frozen=True)
+class EpochSource:
+    """Events to cut windows around: instants (`stops` is None) or intervals, with their own window in seconds."""
 
-    With a `parent`, a window is clipped to the parent segment its time falls in and takes that segment's attributes;
-    a time outside every parent segment gets no window. Overlapping windows (within one parent) are merged into one when
-    `merge` is on, and `count_name` says how many times each window holds. `parent_name` names the attribute that says which
-    parent segment a window is in (1-based)."""
-    if before < 0 or after < 0:
-        raise ValueError("before and after must not be negative")
-    times = np.sort(np.asarray(times, dtype=float))
-    starts, stops = times - before, times + after
-    owner = np.full(len(times), -1, dtype=int)
-    if parent is not None and len(times):
-        index = np.searchsorted(parent.starts, times, side="right") - 1
-        inside = (index >= 0) & (times < parent.stops[np.clip(index, 0, None)])
-        owner = np.where(inside, index, -1)
-        keep = owner >= 0
-        times, starts, stops, owner = times[keep], starts[keep], stops[keep], owner[keep]
+    starts: np.ndarray
+    stops: np.ndarray | None = None
+    before: float = 0.0
+    after: float = 0.0
+    anchor: str = "span"
+
+    def windows(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(window start, window stop, the moment that decides which parent segment it belongs to)."""
+        if self.before < 0 or self.after < 0:
+            raise ValueError("before and after must not be negative")
+        if self.anchor not in ANCHORS:
+            raise ValueError(f"anchor must be one of {ANCHORS}, got {self.anchor!r}")
+        starts = np.asarray(self.starts, dtype=float)
+        if self.stops is None:
+            return starts - self.before, starts + self.after, starts
+        stops = np.asarray(self.stops, dtype=float)
+        if self.anchor == "span":
+            return starts - self.before, stops + self.after, starts
+        if self.anchor == "start":
+            return starts - self.before, starts + self.after, starts
+        return stops - self.before, stops + self.after, stops
+
+
+def epochs_from_sources(sources, parent: IntervalSeries | None = None, merge: bool = True, count_name: str = "Events",
+                        parent_name: str = "Segment", name: str = "") -> IntervalSeries:
+    """A window around every event of every source, each source with its own window.
+
+    With a `parent`, a window is clipped to the parent segment the event falls in and takes that segment's attributes; an
+    event outside every parent segment gets no window. Overlapping windows (within one parent) are merged into one when
+    `merge` is on, so nothing any source asked for is left out; `count_name` says how many events each window holds, and
+    `parent_name` names the attribute saying which parent segment (1-based) a window is in."""
+    parts = [source.windows() for source in sources]
+    if parts:
+        starts, stops, when = (np.concatenate([p[i] for p in parts]) for i in range(3))
+    else:
+        starts = stops = when = np.zeros(0)
+    order = np.argsort(starts, kind="stable")
+    starts, stops, when = starts[order], stops[order], when[order]
+    owner = np.full(len(starts), -1, dtype=int)
+    if parent is not None and len(starts):
+        index = np.searchsorted(parent.starts, when, side="right") - 1
+        inside = (index >= 0) & (when < parent.stops[np.clip(index, 0, None)])
+        keep = inside
+        starts, stops, when = starts[keep], stops[keep], when[keep]
+        owner = index[keep]
         starts = np.maximum(starts, parent.starts[owner])
         stops = np.minimum(stops, parent.stops[owner])
-    counts = np.ones(len(times), dtype=int)
-    if merge and len(times):
+    counts = np.ones(len(starts), dtype=int)
+    if merge and len(starts):
         begin, finish, who, holds = [starts[0]], [stops[0]], [owner[0]], [1]
         for s, e, o in zip(starts[1:], stops[1:], owner[1:]):
             if s <= finish[-1] and o == who[-1]:                  # touches the previous window of the same parent
@@ -92,6 +125,13 @@ def derive_epochs(times, before: float, after: float, parent: IntervalSeries | N
     if parent is not None:
         attributes = {k: np.asarray(v)[owner] for k, v in parent.attributes.items()}
         descriptions = dict(parent.descriptions)
-        attributes[parent_name] = owner + 1                         # which parent segment (1-based), for navigating back
+        attributes[parent_name] = owner + 1                       # which parent segment, for navigating back
     attributes[count_name] = counts
     return IntervalSeries(starts, stops, attributes, name=name, descriptions=descriptions)
+
+
+def derive_epochs(times, before: float, after: float, parent: IntervalSeries | None = None, merge: bool = True,
+                  count_name: str = "Events", parent_name: str = "Segment", name: str = "") -> IntervalSeries:
+    """A window from `before` seconds earlier to `after` seconds later around each of one list of instants."""
+    return epochs_from_sources([EpochSource(np.asarray(times, dtype=float), None, before, after)], parent, merge,
+                               count_name, parent_name, name)

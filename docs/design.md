@@ -2462,8 +2462,10 @@ Decided in discussion (not built yet unless noted).
   the commands Track this event and Remove from tracker. Grayed tiles can be selected and filtered by, so a filter never needs an event
   to be tracked, and the event dialog is no longer a way to create a condition. A tile shows the state of any condition it is part of.
   The video's corner badges are removed once the tracker exists.
-* **Clicking a tile** selects it. A double-click is bound to a list of commands, the first that applies runs (`[seek, only_with_event]`),
-  so on a tile it adds the filter.
+* **Clicking a tile** selects it. A double-click is bound to a list of commands, the first that applies runs (`[seek, toggle_tracking]`),
+  so on a tile it tracks or untracks the event: the most frequent action and an easy one to undo. Filtering changes what can be seen and
+  played, so it is not on a double-click: it is on the right-click menu and on multi-select ("Only segments with this event", and any of /
+  all of / none of for several).
 * **Details with several items** show a table with one row per selected item and its brief figures, and the full details of the row the
   user clicks in the panel. There is no primary item and no tabs (tabs do not scale to dozens of units).
 * **Editing a condition.** The chips remain as the list of active conditions (they show a group such as "C0 or C1" and its window, which
@@ -2474,3 +2476,12 @@ Decided in discussion (not built yet unless noted).
   (before the start to after the end), which is the default because the end of a touch matters as much as the start, or just the
   **start** or the **end** (needed when windows must share one alignment point, as when averaging responses to contact onset). With
   several tiles each event uses its own window and overlapping windows merge, so nothing requested is left out.
+
+**Built so far from 28.11 (the clip windows).** `syncviz/epochs.py` cuts windows from several sources at once (`EpochSource`: each with its
+own before, after and anchor; `epochs_from_sources`), merging overlapping windows within a parent segment. A window belongs to the segment
+where the anchored moment falls. A derived segmentation takes `from:` (one source) or `sources:` (named events, as the app writes when the
+user makes windows), with `anchor: span|start|stop` (default span for an event that lasts; `edge:` is still read as a synonym). The project
+has a `clip:` default and an event may carry `clip_ms: [before, after]` and `anchor:`; the user's overrides and the windows they made are
+saved in the workspace (`settings.events.clips` and `.segmentations`). Commands on a named event: **Make windows around this event** (adds
+the windows as a segmentation to choose, and moves to them) and **Clip window…** (a small dialog). Windows from several events at once
+arrive with multi-selection.
