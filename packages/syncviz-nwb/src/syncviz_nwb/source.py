@@ -8,6 +8,8 @@ in memory and nothing is read that was not requested.
 
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -37,6 +39,9 @@ class NWBSource(Source):
         self.path = Path(path)
         self.lazy_min_samples = lazy_min_samples
         self._h5 = None                      # read-only handle kept open while lazy series are in use
+        self._lock = threading.RLock()       # reads may come from the interface and from a background warm-up
+        self._io = None                      # the parsed file, kept: see `_file`
+        self._nwbfile = None
 
     def _h5file(self):
         if self._h5 is None:
@@ -45,10 +50,24 @@ class NWBSource(Source):
             self._h5 = h5py.File(self.path, "r")
         return self._h5
 
+    @contextmanager
+    def _file(self):
+        """The parsed NWB file, opened once and kept until `close`. Parsing the structure of a large file costs about a second, so it
+        is not done again for every read; a read still copies out only what it asks for, since the data stays in the file."""
+        with self._lock:
+            if self._nwbfile is None:
+                self._io = self._open()
+                self._nwbfile = self._io.read()
+            yield self._nwbfile
+
     def close(self) -> None:
-        if self._h5 is not None:
-            self._h5.close()
-            self._h5 = None
+        with self._lock:
+            if self._h5 is not None:
+                self._h5.close()
+                self._h5 = None
+            if self._io is not None:
+                self._io.close()
+                self._io, self._nwbfile = None, None
 
     def _open(self):
         # Imported lazily so discovering the plugin doesn't pay pynwb's import cost.
@@ -58,8 +77,7 @@ class NWBSource(Source):
 
     def describe(self) -> list[str]:
         """Paths of the objects in the file, without reading any data."""
-        with self._open() as io:
-            nwb = io.read()
+        with self._file() as nwb:
             names = [f"acquisition/{name}" for name in nwb.acquisition]
             for module_name, module in nwb.processing.items():
                 names += [f"processing/{module_name}/{name}" for name in module.data_interfaces]
@@ -78,8 +96,7 @@ class NWBSource(Source):
             return len(getattr(ts.data, "shape", ())) == 1
 
         entries: list[DataEntry] = []
-        with self._open() as io:
-            nwb = io.read()
+        with self._file() as nwb:
             objects = [(f"acquisition/{n}", o) for n, o in nwb.acquisition.items()]
             for module_name, module in nwb.processing.items():
                 objects += [(f"processing/{module_name}/{n}", o) for n, o in module.data_interfaces.items()]
@@ -176,8 +193,8 @@ class NWBSource(Source):
         Columns other than start/stop become attributes. Columns that are not
         plain per-row values (such as references to other objects) are skipped.
         """
-        with self._open() as io:
-            table = self._resolve(io.read(), path)
+        with self._file() as nwb:
+            table = self._resolve(nwb, path)
             df = table.to_dataframe()
             starts = df["start_time"].to_numpy(dtype=float)
             stops = df["stop_time"].to_numpy(dtype=float)
@@ -201,8 +218,8 @@ class NWBSource(Source):
 
     def read_events(self, path: str) -> dict[str, EventSeries]:
         """A BehavioralEvents container (or single series) as EventSeries by name."""
-        with self._open() as io:
-            obj = self._resolve(io.read(), path)
+        with self._file() as nwb:
+            obj = self._resolve(nwb, path)
             if path == "units":
                 return self._unit_spikes(obj)
             series = obj.time_series if hasattr(obj, "time_series") else {obj.name: obj}
@@ -234,8 +251,8 @@ class NWBSource(Source):
         `only` restricts which members are read, so large unused members stay on disk.
         """
         wanted = None if only is None else set(only)
-        with self._open() as io:
-            obj = self._resolve(io.read(), path)
+        with self._file() as nwb:
+            obj = self._resolve(nwb, path)
             members = obj.time_series if hasattr(obj, "time_series") else {obj.name: obj}
             if wanted is not None and not wanted <= set(members):
                 raise KeyError(f"{path!r} has no member(s) {sorted(wanted - set(members))}")

@@ -130,11 +130,24 @@ class ResourceStore:
         """Drop a result kept by `cached`, so it is made again with whatever has changed."""
         self._cache.pop(("cached",) + key, None)
 
+    def catalog(self, name: str) -> list:
+        """What source `name` offers (see `Source.catalog`), worked out once: scanning a large file takes seconds."""
+        return self._get(("catalog", name), lambda: self.source(name).catalog())
+
+    def warm(self) -> None:
+        """Do the slow, once-only work ahead of need (each source's catalog and, for NWB, its parsed structure), so the first
+        thing the viewer asks for is not the one that waits. Meant for a background thread; failures are left for later."""
+        for name in list(self.sources):
+            try:
+                self.catalog(name)
+            except Exception:
+                pass
+
     def kind_of(self, ref: str) -> str | None:
         """What the source says is at `ref` (`events`, `intervals`, ...), or None."""
         name, path = split_ref(ref)
         source = self.source(name)
-        return self._get(("kind", ref), lambda: next((e.kind for e in source.catalog() if e.path == path), None))
+        return self._get(("kind", ref), lambda: next((e.kind for e in self.catalog(name) if e.path == path), None))
 
     def cached(self, key: tuple, load):
         """`load()`, done once per key for this recording."""

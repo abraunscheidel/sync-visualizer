@@ -2593,3 +2593,11 @@ Nothing changes until Update, and an Update that would leave no segment is refus
 There is no hidden mode: the selection is the ordinary one. A plain click on something else (or clearing the selection) lets go of the
 chip, which is how the panel tells starting again from adding to the selection (`Selection.last_kind`). Double-clicking the label opens
 the dialog for the answer, the clips and the rest.
+
+**Slow once-only work is done when a session opens (built).** The first open of the "Other events" list froze the application for about ten
+seconds on a large file: every read re-parsed the file's structure (about a second) and every event rescanned the catalog. Now the NWB source
+parses the file once and keeps it (reads from the interface and from a background thread are serialised by a lock), a source's catalog is kept
+per recording (`ResourceStore.catalog`), and the project's named events, with their kinds, are loaded when a session opens
+(`EventConditions.warm_in`): in the window build at startup, and in the loading step when switching sessions, off the interface thread. Grayed
+tiles are never read just to be drawn. Opening the list takes about 10 ms. A new kind of data that is slow to find out about should be warmed
+the same way, not at the first click.

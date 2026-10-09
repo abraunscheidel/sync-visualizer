@@ -53,6 +53,21 @@ class EventConditions:
         spec = self.spec_of(name)
         return resources.events_or_intervals(spec["from"], spec.get("member"))
 
+    def warm_in(self, resources) -> None:
+        """Load, ahead of need, what the project's named events stand for in the recording `resources` holds: its catalogs, each
+        event's data and what kind of thing it is. Done when a session opens (off the interface thread when switching), so the
+        first filter, tile or hover is not the one that waits. An event this recording lacks is skipped."""
+        resources.warm()
+        for name in self.names():
+            try:
+                self.find_in(resources, name)
+                resources.kind_of(self.spec_of(name)["from"])
+            except Exception:
+                pass
+
+    def warm(self) -> None:
+        self.warm_in(self.context.resources)
+
     def find(self, name: str):
         """The data behind an event name in the open recording."""
         return self.find_in(self.context.resources, name)

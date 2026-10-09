@@ -1,6 +1,6 @@
 # Checklists
 
-What to do next is in `docs/backlog.md`: update it when work starts, finishes or is added.
+What to do next is on the GitHub board (`docs/backlog.md` links to it): move or close an issue when work starts or finishes, and add one for new work.
 
 Things that are easy to forget when changing the app. Where possible a test enforces the item; those are marked.
 

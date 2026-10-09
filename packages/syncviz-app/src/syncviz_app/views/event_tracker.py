@@ -96,7 +96,7 @@ class _Canvas(QWidget):
             p.drawText(rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
         for tile in self.tiles:
             level = view.level_of(tile.name) if tile.tracked else 0.0
-            has_data = view.has_data(tile.name)
+            has_data = view.has_data(tile.name) if tile.tracked else False        # grayed tiles are not read just to be drawn
             fill = QColor(lit if tile.tracked else dark)
             fill.setAlpha(int(UNLIT_ALPHA + (LIT_ALPHA - UNLIT_ALPHA) * level) if tile.tracked else 14)
             outline = QColor(dark)

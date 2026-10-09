@@ -481,6 +481,7 @@ class MainWindow(QMainWindow):
             def open_files():
                 opened = project.open_collection(index)
                 try:
+                    context.events.warm_in(opened)                     # the named events too: here, not at the first click
                     found = None
                     if context.navigator is not None:
                         name = self.active_segmentation
@@ -661,7 +662,7 @@ class MainWindow(QMainWindow):
     # -- adding and removing views ---------------------------------------------------------
     def source_catalog(self) -> dict:
         """What every source offers, by source name (see Source.catalog)."""
-        return {name: source.catalog() for name, source in self.context.resources.sources.items()}
+        return {name: self.context.resources.catalog(name) for name in self.context.resources.sources}
 
     def choose_view_to_add(self) -> None:
         from syncviz_app.add_view_dialog import AddViewDialog

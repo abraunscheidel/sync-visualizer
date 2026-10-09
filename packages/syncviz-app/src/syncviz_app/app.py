@@ -45,6 +45,7 @@ def build_window(project_path: str | Path, debug: bool = False, use_workspace: b
     context.dates = project.dates
     context.inspector = Inspector(context)
     context.events = EventConditions(context, project.event_groups, project.clip_defaults, project.track_default)
+    context.events.warm()                                  # the named events are loaded now, not at the first click
     context.commands = CommandRegistry(context, project.config.get("interaction"), DEFAULT_KEYS)
 
     # Segment navigation (the first configured segmentation).

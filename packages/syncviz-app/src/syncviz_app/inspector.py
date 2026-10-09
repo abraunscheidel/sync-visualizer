@@ -31,7 +31,7 @@ class Inspector:
     def _described(self, target: Target) -> str:
         if target.source not in self._catalogs:
             try:
-                self._catalogs[target.source] = self.context.resources.source(target.source).catalog()
+                self._catalogs[target.source] = self.context.resources.catalog(target.source)
             except Exception:
                 self._catalogs[target.source] = []
         for entry in self._catalogs[target.source]:
