@@ -2585,3 +2585,11 @@ or clips, faded if that condition is off. Click selects, Ctrl and Shift extend; 
 `[seek, toggle_tracking]` that applies, so on a tile it tracks or untracks the event. Right-click offers Track this event / Remove from
 tracker (and Track these events for several) beside the filter and clip commands. A binding in `interaction:` may be a list. The video's
 corner badges are gone (their `overlay: rows:` and `corner:` give a note pointing at the tracker); the video keeps its drawn tracking.
+
+**Changing a condition by selecting its events (built, from 28.11).** Clicking a chip's label selects its events and marks the chip (a
+blue border) as the one being changed. Add or remove events in the views with Ctrl-click or Shift-click and the chip offers **Update**
+(make it use the selected events, keeping its answer, mode and switch) and **Revert** (put the selection back to the chip's events).
+Nothing changes until Update, and an Update that would leave no segment is refused with the usual message and leaves the chip as it was.
+There is no hidden mode: the selection is the ordinary one. A plain click on something else (or clearing the selection) lets go of the
+chip, which is how the panel tells starting again from adding to the selection (`Selection.last_kind`). Double-clicking the label opens
+the dialog for the answer, the clips and the rest.

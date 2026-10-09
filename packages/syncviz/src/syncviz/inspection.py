@@ -67,6 +67,7 @@ class Selection:
     def __init__(self) -> None:
         self.targets: list["Target"] = []
         self.anchor: "Target | None" = None           # where a Shift-click range starts: the item last clicked
+        self.last_kind = "set"                        # how it last changed: set (started again), set_all, toggle or extend
         self._observers: list = []
 
     @property
@@ -89,6 +90,7 @@ class Selection:
     def set(self, target: "Target | None") -> None:
         """Select just this item (or nothing)."""
         self.anchor = target
+        self.last_kind = "set"
         self._replace([] if target is None else [target])
 
     def set_all(self, targets) -> None:
@@ -98,11 +100,13 @@ class Selection:
             if not any(same_item(t, u) for u in unique):
                 unique.append(t)
         self.anchor = unique[-1] if unique else None
+        self.last_kind = "set_all"
         self._replace(unique)
 
     def toggle(self, target: "Target") -> None:
         """Add the item to the selection, or take it out if it is in."""
         self.anchor = target
+        self.last_kind = "toggle"
         if self.is_selected(target):
             self._replace([t for t in self.targets if not same_item(t, target)])
         else:
@@ -117,6 +121,7 @@ class Selection:
             self.set(target)
             return
         lo, hi = sorted((start, position))
+        self.last_kind = "extend"
         self._replace(list(ordered[lo:hi + 1]))        # the anchor stays, so a longer or shorter run can follow
 
     def clear(self) -> None:

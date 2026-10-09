@@ -10,14 +10,12 @@ planned unless said otherwise.
 
 ## Next, in order
 
-1. **Chips: Update | Revert.** Clicking a chip selects its events; if the selection then changes the chip offers Update or Revert
-   (28.11).
-2. **Groups** (28.9). Named, saved filters over items ("layer 4 units"), kept per project; a group is one selectable item with many
+1. **Groups** (28.9). Named, saved filters over items ("layer 4 units"), kept per project; a group is one selectable item with many
    members; rule-based groups work across sessions, explicit lists belong to one recording. "Save as group" from a selection.
-3. **Aggregation views** (28.9). A time-aligned profile around events or clips, per group, as the main output (rate of each neuron around
+2. **Aggregation views** (28.9). A time-aligned profile around events or clips, per group, as the main output (rate of each neuron around
    contact); a per-item table as the secondary one.
-4. **Data-health report.** Grow the sync diagnostics into a general report, each warning linking to the region it is about.
-5. **The profile layer** (28.9). Separate reading a file format from interpreting an experiment. Must be done before any new source type is
+3. **Data-health report.** Grow the sync diagnostics into a general report, each warning linking to the region it is about.
+4. **The profile layer** (28.9). Separate reading a file format from interpreting an experiment. Must be done before any new source type is
    added (see `docs/checklists.md`). It is also where plugin authoring (below) lives.
 
 ## Plugin authoring (28.15)
@@ -54,6 +52,7 @@ The aim: someone with a new experiment can get their data in with little work, s
 
 ## Done recently
 
+- Chips: Update | Revert (28.11).
 - The event tracker view; the video's corner badges removed (28.11, end of 28.15's neighbour notes).
 - docs/backlog.md itself.
 - Multi-selection: Ctrl and Shift click, commands on several events, the Details table (28.11).

@@ -1,14 +1,18 @@
 """The Events panel: the event conditions in force, as chips (design doc 28.10).
 
 A chip is one condition: a list of events of which any one counts, and yes or no. Its box switches it on or off without losing it,
-its button chooses whether it keeps the segments where the events happened or just the clips around them, its label opens it for
-changing, and its x removes it. Chips that are on combine with each other and with the segment filters (all must hold). A core
+its button chooses whether it keeps the segments where the events happened or just the clips around them, its x removes it, and
+clicking its label selects its events so they can be changed in the views: add or remove events with Ctrl-click or Shift-click and
+the chip offers Update (make the chip use the selection) or Revert (go back to its events). Nothing changes until Update, and a plain
+click on something else lets go of the chip. Double-clicking the label opens a dialog for the rest (yes or no, clips). Chips that are on combine with each other and with the segment filters (all must hold). A core
 panel, not a view: it holds shared state and there is only one of it.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from dataclasses import replace
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QRadioButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -133,11 +137,22 @@ class ClipDialog(QDialog):
         return self.before.value(), self.after.value(), self.anchor.currentData()
 
 
+class _ChipLabel(QPushButton):
+    """A flat button that also says when it is double-clicked."""
+
+    doubleClicked = Signal()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.doubleClicked.emit()
+
+
 class EventsPanel(QWidget):
     def __init__(self, context) -> None:
         super().__init__()
         self.context = context
         self.conditions = context.events
+        self.linked: int | None = None                      # the chip whose events are selected, to be changed in the views
+        self.linked_events: tuple[str, ...] = ()            # ... as it had them when it was linked, or last updated
         layout = QVBoxLayout(self)
         self.empty = QLabel(EMPTY_TEXT)
         self.empty.setWordWrap(True)
@@ -161,9 +176,62 @@ class EventsPanel(QWidget):
         self.add_button.clicked.connect(self.add_clicked)
         self.clear_button.clicked.connect(self.conditions.clear)
         self.conditions.subscribe(self.rebuild)
+        context.selection.subscribe(lambda _targets: self._selection_changed())
         self.rebuild()
 
+    # -- a chip linked to the selection --------------------------------------------------------------------
+    def _selected_names(self) -> tuple[list[str], int]:
+        """The project's names for the selected items that are events, and how many selected items are not."""
+        names, other = [], 0
+        for target in self.context.selection.targets:
+            name = self.conditions.name_of(target)
+            if name is None:
+                other += 1
+            elif name not in names:
+                names.append(name)
+        return names, other
+
+    def changed_from_chip(self) -> bool:
+        """Whether the selection differs from the events of the chip being changed."""
+        if self.linked is None:
+            return False
+        names, other = self._selected_names()
+        return other > 0 or set(names) != set(self.linked_events)
+
+    def link(self, index: int) -> None:
+        """Select the events of chip `index`; changing the selection then proposes a change to the chip."""
+        condition = self.conditions.items[index]
+        self.linked, self.linked_events = index, condition.events
+        self.context.selection.set_all([self.conditions.target_of(n) for n in condition.events])
+        self.rebuild()
+
+    def _selection_changed(self) -> None:
+        if self.linked is not None and self.context.selection.last_kind == "set" and self.changed_from_chip():
+            self.linked = None                              # started again with something else: let go of the chip
+        self.rebuild()
+
+    def update_linked(self) -> bool:
+        """Make the linked chip use the selected events."""
+        names, _ = self._selected_names()
+        if self.linked is None or not names:
+            return False
+        condition = self.conditions.items[self.linked]
+        if self.conditions.replace(self.linked, replace(condition, events=tuple(names))):
+            self.linked_events = tuple(names)
+            self.rebuild()
+            return True
+        return False
+
+    def revert_linked(self) -> None:
+        """Put the selection back to the linked chip's events."""
+        if self.linked is not None:
+            self.context.selection.set_all([self.conditions.target_of(n) for n in self.linked_events])
+
     def rebuild(self) -> None:
+        if self.linked is not None and (self.linked >= len(self.conditions.items)
+                                        or (self.conditions.items[self.linked].events != self.linked_events
+                                            and self.conditions.items[self.linked].events != tuple(self._selected_names()[0]))):
+            self.linked = None                              # the chip went, or changed some other way (the dialog)
         while self.chips.count():
             widget = self.chips.takeAt(0).widget()
             if widget is not None:
@@ -185,11 +253,13 @@ class EventsPanel(QWidget):
         on.setChecked(condition.enabled)
         on.setToolTip("Apply this condition (untick to keep it without applying it)")
         on.toggled.connect(lambda checked, i=index: self.conditions.set_enabled(i, checked))
-        label = QPushButton(condition.label())
+        label = _ChipLabel(condition.label())
         label.setFlat(True)
         label.setStyleSheet("text-align: left;" + ("" if condition.enabled else " color: gray;"))
-        label.setToolTip("Click to change this condition")
-        label.clicked.connect(lambda _=False, i=index: self.edit(i))
+        label.setToolTip("Click to select its events and change them in the views (then Update). "
+                         "Double-click for yes or no, clips and the rest.")
+        label.clicked.connect(lambda _=False, i=index: self.link(i))
+        label.doubleClicked.connect(lambda i=index: self.edit(i))
         mode = QPushButton("Clips" if condition.mode == "clip" else self.conditions.base_plural())
         mode.setEnabled(condition.answer)
         mode.setToolTip("What this condition keeps: the whole segments where the events happened, or just the clips around them "
@@ -202,8 +272,20 @@ class EventsPanel(QWidget):
         remove.clicked.connect(lambda _=False, i=index: self.conditions.remove(i))
         row.addWidget(on)
         row.addWidget(label, 1)
+        if index == self.linked and self.changed_from_chip():
+            update = QPushButton("Update")
+            update.setToolTip("Make this condition use the events selected now")
+            update.setEnabled(bool(self._selected_names()[0]))
+            update.clicked.connect(self.update_linked)
+            revert = QPushButton("Revert")
+            revert.setToolTip("Go back to this condition's events")
+            revert.clicked.connect(self.revert_linked)
+            row.addWidget(update)
+            row.addWidget(revert)
         row.addWidget(mode)
         row.addWidget(remove)
+        if index == self.linked:
+            frame.setStyleSheet("QFrame[chip=true] { border: 1px solid #4fa3e0; }")          # the one being changed
         return frame
 
     def add_clicked(self) -> None:
