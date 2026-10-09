@@ -99,9 +99,8 @@ class _FrameWidget(QWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._step)
 
-    def show_frame(self, image: QImage, blank: bool = False) -> None:
+    def show_frame(self, image: QImage) -> None:
         self._image, self._cue, self._target_mix = image, "", 0.0
-        self.blank = blank
         self._start_fade()
 
     def show_no_data(self, message: str) -> None:
@@ -387,8 +386,8 @@ class VideoView(View):
             image = _VIDEO_RANGE_LUT[image]
         image = np.ascontiguousarray(image)
         h, w = image.shape
-        blank = float(image.mean()) < BLANK_MEAN_LUMA         # a blackout frame has nothing to draw tracking on
-        self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy(), blank)
+        self.widget.blank = float(image.mean()) < BLANK_MEAN_LUMA     # a blackout frame has nothing to draw tracking on
+        self.widget.show_frame(QImage(image.data, w, h, w, QImage.Format.Format_Grayscale8).copy())
         self._shown = n
         self._update_layers()
 
