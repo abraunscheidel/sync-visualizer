@@ -12,7 +12,7 @@ it lives in a core panel (`events_panel.py`), not in a view.
 
 from __future__ import annotations
 
-from syncviz.conditions import Condition, conditions_mask
+from syncviz.conditions import Condition, condition_mask, conditions_mask
 from syncviz.epochs import ANCHORS
 from syncviz.inspection import Target
 from syncviz_app.project import split_ref
@@ -107,12 +107,34 @@ class EventConditions:
         self.items = items
         if not self.apply():
             self.items = before
-            self.message = "No segment would be left, so that condition was not applied."
+            self.message = "No segment would be left, so that condition was not applied. " + self._why(items, before)
             self._notify()
             return False
         self.message = ""
         self._notify()
         return True
+
+    def _why(self, items: list[Condition], before: list[Condition]) -> str:
+        """A hint about the condition that was just tried: how many segments it matches on its own, and whether its window is
+        what rules them out."""
+        nav = self.context.navigator
+        tried = next((c for c in items if c not in before), None)
+        if tried is None or nav is None:
+            return ""
+        total = len(nav.intervals)
+        try:
+            alone = int(condition_mask(nav.intervals, tried, self.find).sum())
+            hint = f"On its own it matches {alone} of {total}."
+            if tried.window_ms is not None:
+                free = Condition(tried.events, tried.answer, None, tried.edge)
+                anywhere = int(condition_mask(nav.intervals, free, self.find).sum())
+                hint += (f" Without its window ({tried.window_ms[0]:g} to {tried.window_ms[1]:g} ms from the start of each "
+                         f"segment) it would match {anywhere}.")
+            else:
+                hint += " The other conditions and filters rule out the rest."
+            return hint
+        except Exception:                                   # the data behind it is missing in this recording
+            return ""
 
     def add(self, condition: Condition) -> bool:
         return self._change(self.items + [condition])

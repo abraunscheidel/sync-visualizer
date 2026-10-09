@@ -205,3 +205,23 @@ def test_the_panel_says_when_the_project_names_no_events(window):
     window.context.events.groups = {}
     from syncviz_app.events_panel import EventsPanel
     assert not EventsPanel(window.context).add_button.isEnabled()
+
+
+def test_a_refused_condition_says_how_many_segments_it_matches_and_whether_its_window_is_the_reason(window):
+    events = window.context.events
+    # the contact (3.0 to 3.5) is in trial 1, but not in the first 500 ms of it: the window, counted from the start, rules it out
+    assert not events.add(Condition(("Contact C0",), window_ms=(-500, 500)))
+    text = window.events_panel.message.text()
+    assert "No segment would be left" in text and "On its own it matches 0 of 2" in text
+    assert "Without its window (-500 to 500 ms from the start of each segment) it would match 1" in text
+    events.clear()
+    events.add(Condition(("Lick left",)))
+    assert not events.add(Condition(("Lick left",), answer=False))          # contradicts the one before
+    assert "On its own it matches 1 of 2" in window.events_panel.message.text()
+    assert "other conditions and filters rule out the rest" in window.events_panel.message.text()
+
+
+def test_the_dialog_explains_that_the_window_counts_from_the_start_of_the_segment(window):
+    from syncviz_app.events_panel import ConditionDialog
+    dialog = ConditionDialog(window.context, None)
+    assert "START of each segment" in dialog.limit.toolTip() and "not around the event" in dialog.limit.toolTip()

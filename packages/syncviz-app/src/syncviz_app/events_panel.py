@@ -55,8 +55,11 @@ class ConditionDialog(QDialog):
         row.addWidget(self.yes)
         row.addWidget(self.no)
         layout.addLayout(row)
-        self.limit = not_saved(QCheckBox("Only look in part of the segment"), "a dialog's own choice")
-        self.limit.setToolTip("Milliseconds from the start of each segment. Without this, anywhere in the segment counts.")
+        self.limit = not_saved(QCheckBox("Only count it if it happens early in the segment"), "a dialog's own choice")
+        self.limit.setToolTip(
+            "Counted from the START of each segment (a trial, or a window), not around the event. For example 0 to 500 ms "
+            "keeps the segments where it happened in the first half second. Leave this off to count it anywhere in the "
+            "segment, which is usually what is wanted.")
         window = condition.window_ms if condition and condition.window_ms else (0.0, 500.0)
         self.limit.setChecked(bool(condition and condition.window_ms))
         self.start = not_saved(QDoubleSpinBox(), "a dialog's own value")
@@ -70,9 +73,9 @@ class ConditionDialog(QDialog):
         self.limit.toggled.connect(self.stop.setEnabled)
         layout.addWidget(self.limit)
         span = QHBoxLayout()
-        span.addWidget(QLabel("from"))
+        span.addWidget(QLabel("from the start, at"))
         span.addWidget(self.start)
-        span.addWidget(QLabel("to"))
+        span.addWidget(QLabel("until"))
         span.addWidget(self.stop)
         layout.addLayout(span)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
