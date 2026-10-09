@@ -184,8 +184,8 @@ def test_a_group_opens_as_a_view_of_its_average_rate(window):
     registry = window.context.commands
     target = window.context.events.target_of("Deep")
     labels = [c.label for c in registry.get("open_as_view").children(target, None)]
-    assert labels == ["Time series plot"]
-    registry.get("open_as_view").children(target, None)[0].run(target, None)
+    assert sorted(labels) == ["Event-triggered average", "Time series plot"]
+    next(c for c in registry.get("open_as_view").children(target, None) if c.label == "Time series plot").run(target, None)
     view = window.views[-1]
     assert view.type_name == "timeseries" and view.title == "Deep rate"
     assert view.series.values.max() > 0 and len(view.series) > 10

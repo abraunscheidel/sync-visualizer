@@ -2625,3 +2625,19 @@ A group is a named set of items from one container of event series (the units of
   defined, where it is kept and the figures of its events together.
 * **Not yet.** Saying in a workspace which groups are shown; offering a rule when a selection shares one; editing or renaming a group; the
   average over a group inside aggregation views (that is the next item, with the time-aligned profiles).
+
+### 28.17 Peri-event analysis: the event-triggered average
+
+`syncviz/peri_event.py` holds pure functions for looking at the windows around moments (every contact, every trial start); the first output
+is the **event-triggered average** (in neuroscience a PSTH when the signal is spikes), shown by the `event_average` view. Others that share
+the windowing belong in the same module (a raster with one row per moment, a cross-correlogram where another unit's spikes are the
+moments, a split by condition). "Triggered" alone is avoided as a name since it also reads as the sync trigger or an action on an event.
+
+`peri_event_rate(streams, moments, before, after, bin)` gives an `EventAverage`: mean rate per item (a group reads as the average unit,
+not the sum), the standard error between moments, and the moments themselves, so a feature can be traced to times (`moments_in`).
+`item_row` summarises one as before/after/change/peak for the per-item table. The view takes items from the selection or its spec, the
+moments from any project event or group (the start or end of an interval), and counts only moments inside the segments shown, so filters
+and clips decide what is averaged. On 229CR, 998 touches of C1 give every unit group a peak 13 to 18 ms after the touch, as expected.
+
+Not built: jumping to the moments behind a feature, averaging a continuous signal (the same windowing), comparing groups or conditions
+on one plot with a difference, and the raster.

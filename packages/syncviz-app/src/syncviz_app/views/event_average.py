@@ -1,4 +1,4 @@
-"""The aligned profile: what items do around the moments that matter (design doc 28.17).
+"""The event-triggered average: what items do around the moments that matter (design doc 28.17).
 
 For each item (a unit, or a group of units), the plot shows its rate against the delay from every moment of an event (every contact,
 every trial start), averaged over the moments, with the spread as a band. A table beside it gives the same per item. Only the moments
@@ -16,7 +16,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QAbstractItemView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout
 
-from syncviz.aggregation import aligned_rate, anchors_from, item_row, within_segments
+from syncviz.peri_event import peri_event_rate, anchors_from, item_row, within_segments
 from syncviz.inspection import Target
 from syncviz_app.project import split_ref
 from syncviz_app.views.base import Candidate, View, ViewSetting
@@ -28,14 +28,14 @@ COLUMNS = ["Item", "Moments", "Before (Hz)", "After (Hz)", "Change (Hz)", "Peak 
 NONE = "(none)"
 
 
-class AlignedProfileView(View):
-    type_name = "aligned"
-    display_name = "Aligned profile"
+class EventAverageView(View):
+    type_name = "event_average"
+    display_name = "Event-triggered average"
     default_refresh_hz = 5.0
 
     @classmethod
     def candidates(cls, catalog):
-        return [Candidate("Aligned profile", {"type": cls.type_name, "title": "Aligned profile", "follow_selection": True},
+        return [Candidate("Event-triggered average", {"type": cls.type_name, "title": "Event-triggered average", "follow_selection": True},
                           "The rate of the selected units or groups around every moment of an event, averaged. Choose the event, "
                           "the window and the bin size in the view's settings.")]
 
@@ -44,7 +44,7 @@ class AlignedProfileView(View):
         item = cls.item_of(target)
         if item is None:
             return None
-        return {"type": cls.type_name, "title": f"{target.label or target.member or target.path} profile", "items": [item]}
+        return {"type": cls.type_name, "title": f"{target.label or target.member or target.path} average", "items": [item]}
 
     @staticmethod
     def item_of(target: Target) -> dict | None:
@@ -57,7 +57,7 @@ class AlignedProfileView(View):
     def __init__(self, context, spec: dict) -> None:
         super().__init__(context, spec)
         if context.events is None:
-            raise ValueError("the aligned profile needs the project's events")
+            raise ValueError("the event-triggered average needs the project's events")
         self.events = context.events
         self.defaults = {"align": spec.get("align"), "before_ms": float(spec.get("before_ms", 500)),
                          "after_ms": float(spec.get("after_ms", 1000)), "bin_ms": float(spec.get("bin_ms", 20)),
@@ -70,7 +70,7 @@ class AlignedProfileView(View):
         self.inside = True
         self.follow = False
         self._cache: tuple | None = None                  # (signature, profiles, moment count)
-        self.profiles: list[tuple[dict, object]] = []     # (item, its Profile) for what is drawn
+        self.profiles: list[tuple[dict, object]] = []     # (item, its EventAverage) for what is drawn
         self.message = ""
 
         self.plot = pg.PlotWidget()
@@ -216,7 +216,7 @@ class AlignedProfileView(View):
             elif moments is not None:
                 for item in self._items:
                     try:
-                        self.profiles.append((item, aligned_rate(self._streams(item), moments, self.before_ms / 1000,
+                        self.profiles.append((item, peri_event_rate(self._streams(item), moments, self.before_ms / 1000,
                                                                   self.after_ms / 1000, self.bin_ms / 1000)))
                     except Exception as exc:              # this recording lacks the item
                         self.message = f"{item.get('name', '?')}: {exc}"

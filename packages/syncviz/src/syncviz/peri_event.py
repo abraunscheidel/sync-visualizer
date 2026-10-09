@@ -1,8 +1,9 @@
-"""Aggregation: what the data does around the moments that matter (design doc 28.17).
+"""Peri-event analysis: what the data does around the moments that matter (design doc 28.17).
 
 Pure functions. Given the times of an item's events (a unit's spikes) and the moments to align to (every contact, every trial start),
-they work out the profile: the item's rate at each delay from the moment, averaged over the moments. Nothing here knows what the
-item or the moment is. The profile keeps the moments it was made from, so a point of it can be traced back to the times it came from.
+they work out the event-triggered average: the item's rate at each delay from the moment, averaged over the moments. Nothing here
+knows what the item or the moment is. The result keeps the moments it was made from, so a point of it can be traced back to times.
+Other views of the windows around moments (a raster, a cross-correlogram) belong in this module too.
 """
 
 from __future__ import annotations
@@ -34,13 +35,13 @@ def within_segments(times: np.ndarray, starts: np.ndarray, stops: np.ndarray) ->
 
 
 @dataclass(frozen=True)
-class Profile:
-    """An item's rate (events per second per member) at each delay from the moments it was aligned to."""
+class EventAverage:
+    """An item's rate (events per second per member) at each delay from the moments it was lined up on."""
 
     edges: np.ndarray                  # bin edges in seconds from the moment (negative is before it)
     mean: np.ndarray                   # mean rate per bin over the moments
     sem: np.ndarray                    # standard error of that mean (zero with a single moment)
-    moments: np.ndarray                # the times (shared time) the profile was aligned to, so a point resolves back to them
+    moments: np.ndarray                # the times (shared time) the average was made from, so a point resolves back to them
     members: int = 1                   # how many items were pooled (a group's units); the rate is per member
     per_moment: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))   # rate per moment and bin
 
@@ -78,7 +79,7 @@ class Profile:
         return self.moments if rate_low is None else self.moments[rates >= rate_low]
 
 
-def aligned_rate(streams, moments, before: float, after: float, bin_size: float) -> Profile:
+def peri_event_rate(streams, moments, before: float, after: float, bin_size: float) -> EventAverage:
     """The rate of `streams` (one array of event times per item) around each of `moments`, from `before` seconds ahead of the
     moment to `after` seconds past it, in bins of `bin_size`. The rate is per item, so a group of three units reads as the average
     unit, not three times a unit."""
@@ -98,10 +99,10 @@ def aligned_rate(streams, moments, before: float, after: float, bin_size: float)
             counts += np.diff(np.searchsorted(times, grid, side="left"), axis=1)
     rate = counts / (np.diff(edges)[0] * members)          # (the window need not be a whole number of bins)
     if len(moments) == 0:
-        return Profile(edges, np.zeros(bins), np.zeros(bins), moments, members, rate)
+        return EventAverage(edges, np.zeros(bins), np.zeros(bins), moments, members, rate)
     mean = rate.mean(axis=0)
     sem = rate.std(axis=0, ddof=1) / np.sqrt(len(moments)) if len(moments) > 1 else np.zeros(bins)
-    return Profile(edges, mean, sem, moments, members, rate)
+    return EventAverage(edges, mean, sem, moments, members, rate)
 
 
 @dataclass(frozen=True)
@@ -120,7 +121,7 @@ class ItemRow:
         return self.after - self.before
 
 
-def item_row(name: str, profile: Profile, span: float) -> ItemRow:
+def item_row(name: str, profile: EventAverage, span: float) -> ItemRow:
     """Summarise a profile: the mean rate over the `span` seconds before the moment against the `span` seconds after it."""
     peak, delay = profile.peak(0.0, span)
     return ItemRow(name, profile.count, profile.mean_rate(-span, 0.0), profile.mean_rate(0.0, span), peak, delay)

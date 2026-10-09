@@ -15,7 +15,7 @@ timeseries = "syncviz_app.views.timeseries:TimeSeriesView"
 tracks = "syncviz_app.views.tracks:TracksView"
 indicators = "syncviz_app.views.indicators:IndicatorsView"
 events = "syncviz_app.views.event_tracker:EventTrackerView"
-aligned = "syncviz_app.views.aligned:AlignedProfileView"
+event_average = "syncviz_app.views.event_average:EventAverageView"
 
 [build-system]
 requires = ["hatchling"]
