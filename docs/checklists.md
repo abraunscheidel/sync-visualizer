@@ -1,5 +1,7 @@
 # Checklists
 
+What to do next is in `docs/backlog.md`: update it when work starts, finishes or is added.
+
 Things that are easy to forget when changing the app. Where possible a test enforces the item; those are marked.
 
 ## Adding or changing a control
